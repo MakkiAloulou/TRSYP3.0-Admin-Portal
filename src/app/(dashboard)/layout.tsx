@@ -36,10 +36,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
                 src="/trsyp-logo.png"
                 loading="eager"
                 alt="TRSYP 3.0"
-                width={240}
-                height={120}
+                width={100}
+                height={40}
                 priority
-                style={{ height: '120px', width: 'auto', objectFit: 'contain' }}
+                style={{ height: '40px', width: 'auto', objectFit: 'contain' }}
               />
             </a>
             <nav className="flex gap-8 text-base" style={{ color: 'rgba(255,255,255,0.6)' }}>
