@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@/lib/prisma';
+import Image from 'next/image';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
@@ -25,18 +26,23 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <div className="min-h-screen" style={{ background: 'var(--color-bg)' }}>
       <header
-        className="px-6 py-4"
+        className="px-8 py-6"
         style={{ borderBottom: '1px solid rgba(0, 232, 122, 0.12)' }}
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <div className="flex items-center gap-8">
-            <h1
-              className="admin-heading text-sm"
-              style={{ color: 'var(--color-green)' }}
-            >
-              TRSYP 3.0 <span className="text-white/40">/ ADMIN</span>
-            </h1>
-            <nav className="flex gap-6 text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>
+          <div className="flex items-center gap-10">
+            <a className="navbar-logo" href="/">
+              <Image
+                src="/trsyp-logo.png"
+                loading="eager"
+                alt="TRSYP 3.0"
+                width={240}
+                height={120}
+                priority
+                style={{ height: '120px', width: 'auto', objectFit: 'contain' }}
+              />
+            </a>
+            <nav className="flex gap-8 text-base" style={{ color: 'rgba(255,255,255,0.6)' }}>
               <Link href="/" className="hover:text-white transition-colors">
                 Users
               </Link>
@@ -45,12 +51,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
               </Link>
             </nav>
           </div>
-          <span className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          <span className="text-base" style={{ color: 'rgba(255,255,255,0.4)' }}>
             {admin.name} {admin.lastName}
           </span>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-6 py-8">{children}</main>
+      <main className="mx-auto max-w-6xl px-8 py-8">{children}</main>
     </div>
   );
 }

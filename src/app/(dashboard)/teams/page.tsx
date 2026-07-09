@@ -45,9 +45,16 @@ export default async function TeamsPage() {
                     Code: {team.code}
                   </p>
                 </div>
-                <span className="admin-badge admin-badge--green">
-                  {team.members.length}/{team.size}
-                </span>
+                {team.members.length === team.size && (
+                  <span className="admin-badge admin-badge--pink">
+                    {team.members.length}/{team.size}
+                  </span>
+                )}
+                {team.members.length < team.size && (
+                  <span className="admin-badge admin-badge--green">
+                    {team.members.length}/{team.size}
+                  </span>
+                )}
               </div>
 
               <div className="space-y-1.5">
