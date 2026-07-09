@@ -64,9 +64,16 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
                 </Td>
                 <Td style={{ color: 'rgba(255,255,255,0.5)' }}>{participant.user.email}</Td>
                 <Td>
-                  <span className="admin-badge admin-badge--green">
-                    {participant.participantType}
-                  </span>
+                  {participant.participantType === 'NonIEEE' && (
+                    <span className="admin-badge admin-badge--green">
+                      {participant.participantType}
+                    </span>
+                  )}
+                  {participant.participantType === 'Student' && (
+                    <span className="admin-badge admin-badge--pink">
+                      {participant.participantType}
+                    </span>
+                  )}
                 </Td>
               </tr>
             ))}
