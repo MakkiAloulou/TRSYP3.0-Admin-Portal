@@ -108,7 +108,16 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
 
         <div className="mb-5 flex flex-wrap gap-2">
           {!p.user.active && <span className="admin-badge admin-badge--gray">Unverified</span>}
-          <span className="admin-badge admin-badge--green">{p.participantType}</span>
+          {p.participantType === 'NonIEEE' && (
+            <span className="admin-badge admin-badge--green">
+              {p.participantType}
+            </span>
+          )}
+          {p.participantType === 'Student' && (
+            <span className="admin-badge admin-badge--pink">
+              {p.participantType}
+            </span>
+          )}
           {p.paid && <span className="admin-badge admin-badge--green">Paid</span>}
           {p.banned && <span className="admin-badge admin-badge--pink">Banned</span>}
           {p.isInternational && <span className="admin-badge admin-badge--pink">International</span>}
