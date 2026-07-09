@@ -2,41 +2,41 @@ import { prisma } from '@/lib/prisma';
 import { ParticipantsTable } from './participants-table';
 
 export default async function ParticipantsPage() {
-  const participants = await prisma.user.findMany({
+  const participants = await prisma.participant.findMany({
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
-      name: true,
-      lastName: true,
-      email: true,
-      active: true,
-      createdAt: true,
-      participant: {
+      ieeeId: true,
+      phone: true,
+      gender: true,
+      paid: true,
+      isInternational: true,
+      banned: true,
+      participantType: true,
+      sb: true,
+      country: true,
+      team: { select: { name: true, code: true } },
+      ownedTeam: { select: { name: true, code: true } },
+      room: { select: { id: true, status: true } },
+      internationalInfo: {
         select: {
-          ieeeId: true,
-          phone: true,
-          gender: true,
-          paid: true,
-          isInternational: true,
-          banned: true,
-          participantType: true,
-          sb: true,
-          country: true,
-          team: { select: { name: true, code: true } },
-          ownedTeam: { select: { name: true, code: true } },
-          room: { select: { id: true, status: true } },
-          internationalInfo: {
-            select: {
-              dateOfBirth: true,
-              countryOfResidence: true,
-              cityOfResidence: true,
-              affiliation: true,
-              expectedArrivalDate: true,
-              expectedDepartureDate: true,
-              requiresVisaLetter: true,
-              visaApplication: { select: { status: true } },
-            },
-          },
+          dateOfBirth: true,
+          countryOfResidence: true,
+          cityOfResidence: true,
+          affiliation: true,
+          expectedArrivalDate: true,
+          expectedDepartureDate: true,
+          requiresVisaLetter: true,
+          visaApplication: { select: { status: true } },
+        },
+      },
+      user: {
+        select: {
+          name: true,
+          lastName: true,
+          email: true,
+          active: true,
+          createdAt: true,
         },
       },
     },
