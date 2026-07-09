@@ -44,7 +44,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             </a>
             <nav className="flex gap-8 text-base" style={{ color: 'rgba(255,255,255,0.6)' }}>
               <Link href="/" className="hover:text-white transition-colors">
-                Users
+                Participants
               </Link>
               <Link href="/teams" className="hover:text-white transition-colors">
                 Teams

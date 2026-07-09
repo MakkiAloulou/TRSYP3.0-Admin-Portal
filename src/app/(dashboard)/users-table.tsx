@@ -13,7 +13,8 @@ type InternationalInfo = {
   visaApplication: { status: string } | null;
 };
 
-type Participant = {
+export type ParticipantRow = {
+  id: string;
   ieeeId: number | null;
   phone: string;
   gender: string;
@@ -27,21 +28,18 @@ type Participant = {
   ownedTeam: { name: string; code: string } | null;
   room: { id: string; status: string } | null;
   internationalInfo: InternationalInfo | null;
+  user: {
+    name: string;
+    lastName: string;
+    email: string;
+    active: boolean;
+    createdAt: string;
+  };
 };
 
-export type UserRow = {
-  id: string;
-  name: string;
-  lastName: string;
-  email: string;
-  active: boolean;
-  createdAt: string;
-  participant: Participant | null;
-};
-
-export function UsersTable({ users }: { users: UserRow[] }) {
-  const [selected, setSelected] = useState<UserRow | null>(null);
-
+export function ParticipantsTable({ participants }: { participants: ParticipantRow[] }) {
+  const [selected, setSelected] = useState<ParticipantRow | null>(null);
+  
   return (
     <>
       <div className="admin-card overflow-x-auto">
@@ -50,29 +48,25 @@ export function UsersTable({ users }: { users: UserRow[] }) {
             <tr style={{ borderBottom: '1px solid rgba(0,232,122,0.12)' }}>
               <Th>Name</Th>
               <Th>Email</Th>
-              <Th>Registered</Th>
+              <Th>Type</Th>
             </tr>
           </thead>
           <tbody>
-            {users.map((user) => (
+            {participants.map((participant) => (
               <tr
-                key={user.id}
-                onClick={() => setSelected(user)}
+                key={participant.id}
+                onClick={() => setSelected(participant)}
                 className="admin-row"
                 style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
               >
                 <Td className="font-medium text-white">
-                  {user.name} {user.lastName}
+                  {participant.user.name} {participant.user.lastName}
                 </Td>
-                <Td style={{ color: 'rgba(255,255,255,0.5)' }}>{user.email}</Td>
+                <Td style={{ color: 'rgba(255,255,255,0.5)' }}>{participant.user.email}</Td>
                 <Td>
-                  {user.participant ? (
-                    <span className="admin-badge admin-badge--green">
-                      {user.participant.participantType}
-                    </span>
-                  ) : (
-                    <span className="admin-badge admin-badge--gray">Not registered</span>
-                  )}
+                  <span className="admin-badge admin-badge--green">
+                    {participant.participantType}
+                  </span>
                 </Td>
               </tr>
             ))}
@@ -80,15 +74,14 @@ export function UsersTable({ users }: { users: UserRow[] }) {
         </table>
       </div>
 
-      {selected && <UserDetailModal user={selected} onClose={() => setSelected(null)} />}
+      {selected && <ParticipantDetailModal participant={selected} onClose={() => setSelected(null)} />}
     </>
   );
 }
 
-function UserDetailModal({ user, onClose }: { user: UserRow; onClose: () => void }) {
-  const p = user.participant;
-  const team = p?.ownedTeam ?? p?.team ?? null;
-  const isLeader = !!p?.ownedTeam;
+function ParticipantDetailModal({ participant: p, onClose }: { participant: ParticipantRow; onClose: () => void }) {
+  const team = p.ownedTeam ?? p.team ?? null;
+  const isLeader = !!p.ownedTeam;
 
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
@@ -99,84 +92,74 @@ function UserDetailModal({ user, onClose }: { user: UserRow; onClose: () => void
 
         <div className="mb-5">
           <h3 className="admin-heading text-lg text-white">
-            {user.name} {user.lastName}
+            {p.user.name} {p.user.lastName}
           </h3>
           <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            {user.email}
+            {p.user.email}
           </p>
         </div>
 
         <div className="mb-5 flex flex-wrap gap-2">
-          {!user.active && <span className="admin-badge admin-badge--gray">Unverified</span>}
-          {p ? (
-            <span className="admin-badge admin-badge--green">{p.participantType}</span>
-          ) : (
-            <span className="admin-badge admin-badge--gray">Not registered</span>
-          )}
-          {p?.paid && <span className="admin-badge admin-badge--green">Paid</span>}
-          {p?.banned && <span className="admin-badge admin-badge--pink">Banned</span>}
-          {p?.isInternational && <span className="admin-badge admin-badge--pink">International</span>}
+          {!p.user.active && <span className="admin-badge admin-badge--gray">Unverified</span>}
+          <span className="admin-badge admin-badge--green">{p.participantType}</span>
+          {p.paid && <span className="admin-badge admin-badge--green">Paid</span>}
+          {p.banned && <span className="admin-badge admin-badge--pink">Banned</span>}
+          {p.isInternational && <span className="admin-badge admin-badge--pink">International</span>}
         </div>
 
-        {p ? (
-          <div className="space-y-4">
-            <DetailGrid>
-              <Detail label="Phone" value={p.phone} />
-              <Detail label="Gender" value={p.gender} />
-              <Detail label="Country" value={p.country} />
-              <Detail label="Student Branch" value={p.sb ?? '—'} />
-              <Detail label="IEEE ID" value={p.ieeeId?.toString() ?? '—'} />
-              <Detail
-                label="Team"
-                value={team ? `${team.name} (${team.code})${isLeader ? ' — Leader' : ''}` : '—'}
-              />
-              <Detail label="Room" value={p.room ? p.room.status : '—'} />
-            </DetailGrid>
+        <div className="space-y-4">
+          <DetailGrid>
+            <Detail label="Phone" value={p.phone} />
+            <Detail label="Gender" value={p.gender} />
+            <Detail label="Country" value={p.country} />
+            <Detail label="Student Branch" value={p.sb ?? '—'} />
+            <Detail label="IEEE ID" value={p.ieeeId?.toString() ?? '—'} />
+            <Detail
+              label="Team"
+              value={team ? `${team.name} (${team.code})${isLeader ? ' — Leader' : ''}` : '—'}
+            />
+            <Detail label="Room" value={p.room ? p.room.status : '—'} />
+          </DetailGrid>
 
-            {p.internationalInfo && (
-              <div>
-                <h4
-                  className="admin-heading mb-2 text-xs uppercase"
-                  style={{ color: 'var(--color-pink)', letterSpacing: '0.1em' }}
-                >
-                  International Info
-                </h4>
-                <DetailGrid>
-                  <Detail
-                    label="Date of Birth"
-                    value={formatDate(p.internationalInfo.dateOfBirth)}
-                  />
-                  <Detail label="Residence" value={p.internationalInfo.cityOfResidence} />
-                  <Detail
-                    label="Country of Residence"
-                    value={p.internationalInfo.countryOfResidence}
-                  />
-                  <Detail label="Affiliation" value={p.internationalInfo.affiliation} />
-                  <Detail
-                    label="Arrival"
-                    value={formatDate(p.internationalInfo.expectedArrivalDate)}
-                  />
-                  <Detail
-                    label="Departure"
-                    value={formatDate(p.internationalInfo.expectedDepartureDate)}
-                  />
-                  <Detail
-                    label="Visa Letter Needed"
-                    value={p.internationalInfo.requiresVisaLetter ? 'Yes' : 'No'}
-                  />
-                  <Detail
-                    label="Visa Status"
-                    value={p.internationalInfo.visaApplication?.status ?? '—'}
-                  />
-                </DetailGrid>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            This user hasn&apos;t completed registration yet.
-          </p>
-        )}
+          {p.internationalInfo && (
+            <div>
+              <h4
+                className="admin-heading mb-2 text-xs uppercase"
+                style={{ color: 'var(--color-pink)', letterSpacing: '0.1em' }}
+              >
+                International Info
+              </h4>
+              <DetailGrid>
+                <Detail
+                  label="Date of Birth"
+                  value={formatDate(p.internationalInfo.dateOfBirth)}
+                />
+                <Detail label="Residence" value={p.internationalInfo.cityOfResidence} />
+                <Detail
+                  label="Country of Residence"
+                  value={p.internationalInfo.countryOfResidence}
+                />
+                <Detail label="Affiliation" value={p.internationalInfo.affiliation} />
+                <Detail
+                  label="Arrival"
+                  value={formatDate(p.internationalInfo.expectedArrivalDate)}
+                />
+                <Detail
+                  label="Departure"
+                  value={formatDate(p.internationalInfo.expectedDepartureDate)}
+                />
+                <Detail
+                  label="Visa Letter Needed"
+                  value={p.internationalInfo.requiresVisaLetter ? 'Yes' : 'No'}
+                />
+                <Detail
+                  label="Visa Status"
+                  value={p.internationalInfo.visaApplication?.status ?? '—'}
+                />
+              </DetailGrid>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
