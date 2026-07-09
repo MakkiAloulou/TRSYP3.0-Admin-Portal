@@ -1,0 +1,370 @@
+// Prisma schema for TRSYP 3.0
+// Uses PostgreSQL via Supabase
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================================
+// Each domain module owns its own models.
+// Models are organized by module boundary.
+// No cross-module entity references — use domain events for inter-module comms.
+// ============================================================================
+
+// --- Auth Module ---
+// Define auth-related models here
+model User {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  name       String
+  lastName   String
+  supabaseId String   @unique
+  provider   String   @default("email")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  active     Boolean  @default(false)
+
+  // Relations
+  participant   Participant?
+  activateToken ActivateToken?
+
+  @@map("users")
+}
+
+model ActivateToken {
+  id          String    @id @default(uuid())
+  userId      String    @unique @map("user_id")
+  token       String    @unique
+  expiresAt   DateTime  @map("expires_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  activatedAt DateTime? @map("activated_at")
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activate_tokens")
+}
+
+enum Position {
+  CHAIR
+  VICE_CHAIR
+  // add more as needed
+}
+
+model Admin {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  name       String
+  lastName   String
+  position   Position
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  supabaseId String   @unique
+
+  @@map("admins")
+}
+
+// --- Registration Module ---
+model Participant {
+  id                String             @id @default(uuid())
+  userId            String             @unique @map("user_id")
+  ieeeId            Int?               @unique @map("ieee_id")
+  phone             String             @unique
+  gender            String
+  paid              Boolean            @default(false)
+  isInternational   Boolean            @default(false) @map("is_international")
+  banned            Boolean            @default(false)
+  participantType   ParticipantType    @map("participant_type")
+  sb                SB?
+  country           COUNTRY
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  ownedRoom         Room?              @relation("RoomOwner")
+  room              Room?              @relation("RoomResidents", fields: [roomId], references: [id])
+  roomId            String?
+  invitations       Invitation[]
+  // Relations
+  teamId            String?            @map("team_id")
+  team              Team?              @relation("TeamMembers", fields: [teamId], references: [id])
+  ownedTeam         Team?              @relation("TeamLeader")
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  internationalInfo InternationalInfo? @relation("ParticipantInternationalInfo")
+
+  @@map("participants")
+}
+
+model Team {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  size      Int // max capacity — enforced at service level
+  leaderId  String   @unique @map("leader_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  leader  Participant   @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+  members Participant[] @relation("TeamMembers")
+
+  @@map("teams")
+}
+
+model InternationalInfo {
+  id                    String   @id @default(uuid())
+  participantId         String   @unique @map("participant_id")
+  dateOfBirth           DateTime @map("date_of_birth")
+  countryOfResidence    String   @map("country_of_residence")
+  cityOfResidence       String   @map("city_of_residence")
+  affiliation           String
+  expectedArrivalDate   DateTime @map("expected_arrival_date")
+  expectedDepartureDate DateTime @map("expected_departure_date")
+  requiresVisaLetter    Boolean  @default(false) @map("requires_visa_letter")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  participant     Participant      @relation("ParticipantInternationalInfo", fields: [participantId], references: [id], onDelete: Cascade)
+  visaApplication VisaApplication? @relation("InternationalInfoVisaApplication")
+
+  @@map("international_info")
+}
+
+model VisaApplication {
+  id                      String     @id @default(uuid())
+  internationalInfoId     String     @unique @map("international_info_id")
+  passportNumber          String     @unique @map("passport_number")
+  passportIssuanceCountry String     @map("passport_issuance_country")
+  issuingOffice           String     @map("issuing_office")
+  passportIssuanceDate    DateTime   @map("passport_issuance_date")
+  passportExpiryDate      DateTime   @map("passport_expiry_date")
+  embassyAddress          String     @map("embassy_address")
+  residenceAddress        String     @map("residence_address")
+  status                  VisaStatus @default(Pending)
+  createdAt               DateTime   @default(now()) @map("created_at")
+  updatedAt               DateTime   @updatedAt @map("updated_at")
+
+  // Relations
+  internationalInfo InternationalInfo @relation("InternationalInfoVisaApplication", fields: [internationalInfoId], references: [id], onDelete: Cascade)
+
+  @@map("visa_applications")
+}
+
+// Enums
+enum ParticipantType {
+  NonIEEE
+  Student
+  YoungProfessional
+}
+
+enum SB {
+  ENIS
+  ENSI
+  SupCom
+  EPS
+  EPPM
+  ISI
+  ISETRADES
+  INAT
+  IIT
+  PolytechSfax
+  ESSTHS
+  ISIMS
+  ISSATM
+  ENISO
+  EPI
+  ISIMM
+  ENICarthage
+  ENIG
+  INSAT
+  FST
+  ENIB
+  ENSIT
+  ENIM
+  FSB
+  ENETCom
+  ISETCom
+  ULT
+  ISSATSo
+  ENSTAB
+  ENIT
+  ISETDjerba
+  TEKUP
+  SESAME
+  ISIMa
+  EPT
+  ISIMG
+  UCentrale
+  ISTIC
+  ISTMT
+  ESPIN
+  FSG
+  ISETNABEUL
+  ISETKef
+  ESPRIT
+  ESPITA
+  ISETBizerte
+  ISETKairouan
+  SMU
+  ISGI
+  FSS
+  FSM
+  CU
+  MSE
+  ISGIS
+  
+   
+
+
+  Other
+}
+
+enum COUNTRY {
+  Tunisia
+  Algeria
+  Morocco
+  Libya
+  Egypt
+  USA
+  UK
+  Canada
+  Germany
+  France
+  Italy
+  Spain
+  UAE
+  SaudiArabia
+  Jordan
+  Lebanon
+  Palestine
+  Syria
+  Iraq
+  Sudan
+  Turkey
+  India
+  Pakistan
+  Bangladesh
+  China
+  Japan
+  SouthKorea
+  Australia
+  Brazil
+  Argentina
+  Mexico
+  Other
+}
+
+enum VisaStatus {
+  Pending
+  Approved
+  Rejected
+  LetterSent
+}
+
+enum POSITION {
+  Chair
+  ViceChair
+  Secretary
+  Treasurer
+  Other
+}
+
+// --- Payment Module ---
+// Define payment-related models here
+
+// --- Rooming Module ---
+// Define rooming-related models here
+enum InvitationStatus {
+  Pending
+  Accepted
+  Rejected
+}
+
+enum RoomStatus {
+  Pending // Default — waiting for residents and payments
+  Confirmed // All residents have paid
+}
+
+model Room {
+  id          String        @id @default(uuid())
+  size        Int // max capacity
+  status      RoomStatus    @default(Pending)
+  ownerId     String        @unique @map("owner_id")
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+  // Relations
+  owner       Participant   @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  residents   Participant[] @relation("RoomResidents")
+  invitations Invitation[]
+
+  @@map("rooms")
+}
+
+model Invitation {
+  id        String           @id @default(uuid())
+  roomId    String           @map("room_id")
+  guestId   String           @map("guest_id")
+  status    InvitationStatus @default(Pending)
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+  // Relations
+  room      Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  guest     Participant      @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, guestId]) // prevent duplicate invitations
+  @@map("invitations")
+}
+
+// --- Visa Module ---
+// Define visa-related models here
+
+// --- Notification Module ---
+// Define notification-related models here
+//enum NotificationType {
+// ROOM_INVITATION
+// PAYMENT_REVIEW_RESULT
+// PAYMENT_PROOF_SUBMITTED
+//}
+//model Notification {
+// id            String           @id @default(uuid())
+// recipientId   String           // userId or adminId
+//recipientType String           // "user" | "admin"
+//type          NotificationType
+//title         String
+//message       String
+//read          Boolean          @default(false)
+//metadata      Json?            // flexible payload (paymentId, roomId, etc.)
+//actionUrl     String?          // deep-link for click-to-navigate
+// createdAt     DateTime         @default(now())
+// updatedAt     DateTime         @updatedAt
+//@@index([recipientId, recipientType])
+//@@index([recipientId, read])
+//@@map("notifications")
+//}
+
+// --- Email Module ---
+// Define email-related models here
+//enum EmailStatus {
+// PENDING
+// SENT
+// FAILED
+//}
+//model EmailLog {
+//id          String      @id @default(uuid())
+//recipient   String      // email address
+//subject     String
+//templateId  String      // e.g., "room-invitation", "payment-result"
+//payload     Json        // template data
+//status      EmailStatus @default(PENDING)
+//sentAt      DateTime?
+//error       String?
+//createdAt   DateTime    @default(now())
+//@@index([recipient])
+//@@index([status])
+//@@map("email_logs")
+//}
+// --- Admin Module ---
+// Define admin-related models here
