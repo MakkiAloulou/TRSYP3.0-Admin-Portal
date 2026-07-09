@@ -1,8 +1,8 @@
 import { prisma } from '@/lib/prisma';
-import { UsersTable } from './users-table';
+import { ParticipantsTable } from './participants-table';
 
-export default async function UsersPage() {
-  const users = await prisma.user.findMany({
+export default async function ParticipantsPage() {
+  const participants = await prisma.user.findMany({
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -44,18 +44,18 @@ export default async function UsersPage() {
 
   // JSON round-trip keeps Server -> Client Component props simple: Dates
   // become ISO strings, which is all the modal needs for display anyway.
-  const serialized = JSON.parse(JSON.stringify(users));
+  const serialized = JSON.parse(JSON.stringify(participants));
 
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="admin-heading text-lg text-white">Users</h2>
+        <h2 className="admin-heading text-lg text-white">Participants</h2>
         <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          {users.length} total
+          {participants.length} total
         </p>
       </div>
 
-      <UsersTable users={serialized} />
+      <ParticipantsTable participants={serialized} />
     </div>
   );
 }
