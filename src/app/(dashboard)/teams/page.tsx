@@ -1,28 +1,7 @@
 import { prisma } from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
-type TeamWithMembers = Prisma.TeamGetPayload<{
-  select: {
-    id: true;
-    name: true;
-    code: true;
-    size: true;
-    leaderId: true;
-    members: {
-      select: {
-        id: true;
-        user: {
-          select: {
-            name: true;
-            lastName: true;
-          };
-        };
-      };
-    };
-  };
-}>;
 
 export default async function TeamsPage() {
-  const teams: TeamWithMembers[] = await prisma.team.findMany({
+  const teams = await prisma.team.findMany({
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -33,7 +12,12 @@ export default async function TeamsPage() {
       members: {
         select: {
           id: true,
-          user: { select: { name: true, lastName: true } },
+          user: {
+            select: {
+              name: true,
+              lastName: true,
+            },
+          },
         },
       },
     },
