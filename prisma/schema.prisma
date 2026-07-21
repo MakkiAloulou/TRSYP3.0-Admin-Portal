@@ -368,3 +368,28 @@ model Invitation {
 //}
 // --- Admin Module ---
 // Define admin-related models here
+
+// --- Challenge Module ---
+model RiddleProgress {
+  id           String    @id @default(uuid())
+  teamId       String    @map("team_id")
+  riddleNumber Int       @map("riddle_number")
+  solved       Boolean   @default(false)
+  attempts     Int       @default(0)
+  solvedAt     DateTime? @map("solved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([teamId, riddleNumber])
+  @@map("riddle_progress")
+}
+model RiddleCode {
+  id           String   @id @default(uuid())
+  teamId       String   @map("team_id")
+  riddleNumber Int      @map("riddle_number")
+  code         String   @unique
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([teamId, riddleNumber])
+  @@map("riddle_codes")
+}
