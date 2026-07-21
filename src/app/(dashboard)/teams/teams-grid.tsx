@@ -60,27 +60,28 @@ export function TeamsGrid({ teams, existingCodes }: { teams: TeamRow[]; existing
     });
   }
 
+  const allSelected = teams.length > 0 && selected.size === teams.length;
+
   return (
     <>
-      <div className="mb-4 flex items-center justify-between">
-        <label className="flex items-center gap-2 text-sm" style={{ color: 'rgba(255,255,255,0.6)' }}>
-          <input
-            type="checkbox"
-            checked={teams.length > 0 && selected.size === teams.length}
-            onChange={toggleAll}
-            style={{ accentColor: 'var(--color-green)' }}
-          />
-          Select all
+      <div className="admin-card admin-toolbar">
+        <label className="admin-checkbox-label">
+          <input type="checkbox" className="admin-checkbox" checked={allSelected} onChange={toggleAll} />
+          {allSelected ? 'All selected' : 'Select all'}
+          {selected.size > 0 && (
+            <span className="admin-badge admin-badge--gray">
+              {selected.size}/{teams.length}
+            </span>
+          )}
         </label>
 
         <button
-          className="admin-btn-primary"
+          type="button"
+          className="admin-btn-primary px-5 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-40"
           disabled={selected.size === 0 || isPending}
           onClick={handleGenerate}
         >
-          {isPending
-            ? 'Generating…'
-            : `Generate riddle codes${selected.size > 0 ? ` (${selected.size})` : ''}`}
+          {isPending ? 'Generating…' : 'Generate riddle codes'}
         </button>
       </div>
 
@@ -90,36 +91,28 @@ export function TeamsGrid({ teams, existingCodes }: { teams: TeamRow[]; existing
           const hasCodes = !!codesByTeam[team.id];
 
           return (
-            <div key={team.id} className="admin-card p-4">
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <label className="flex items-start gap-2">
+            <div key={team.id} className="admin-card flex flex-col p-5">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <label className="admin-checkbox-label min-w-0 items-start">
                   <input
                     type="checkbox"
+                    className="admin-checkbox mt-0.5"
                     checked={selected.has(team.id)}
                     onChange={() => toggle(team.id)}
-                    className="mt-1"
-                    style={{ accentColor: 'var(--color-green)' }}
                   />
-                  <div>
-                    <h3 className="admin-heading text-sm text-white">{team.name}</h3>
-                    <p className="text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                  <span className="min-w-0">
+                    <h3 className="admin-heading truncate text-sm text-white">{team.name}</h3>
+                    <p className="mt-0.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
                       Code: {team.code}
                     </p>
-                  </div>
+                  </span>
                 </label>
 
-                <div className="flex flex-col items-end gap-1">
-                  {team.members.length === team.size && (
-                    <span className="admin-badge admin-badge--pink">
-                      {team.members.length}/{team.size}
-                    </span>
-                  )}
-                  {team.members.length < team.size && (
-                    <span className="admin-badge admin-badge--green">
-                      {team.members.length}/{team.size}
-                    </span>
-                  )}
-                  {hasCodes && <span className="admin-badge admin-badge--gray">Codes generated</span>}
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
+                  <span className={`admin-badge admin-badge--${team.members.length === team.size ? 'pink' : 'green'}`}>
+                    {team.members.length}/{team.size}
+                  </span>
+                  {hasCodes && <span className="admin-badge admin-badge--gray">Codes ready</span>}
                 </div>
               </div>
 
@@ -130,12 +123,12 @@ export function TeamsGrid({ teams, existingCodes }: { teams: TeamRow[]; existing
                     className="flex items-center justify-between rounded-md px-3 py-1.5 text-sm"
                     style={{ background: 'rgba(255,255,255,0.03)' }}
                   >
-                    <span className="text-white/80">
+                    <span className="truncate text-white/80">
                       {member.user.name} {member.user.lastName}
                     </span>
                     {member.id === team.leaderId && (
                       <span
-                        className="text-[10px] font-medium uppercase"
+                        className="ml-2 shrink-0 text-[10px] font-medium uppercase"
                         style={{ color: 'var(--color-green)', letterSpacing: '0.08em' }}
                       >
                         Leader
@@ -159,7 +152,7 @@ export function TeamsGrid({ teams, existingCodes }: { teams: TeamRow[]; existing
               </div>
 
               {hasCodes && (
-                <div className="mt-3 space-y-1 border-t pt-3" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+                <div className="mt-4 space-y-1.5 border-t pt-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
                   {[1, 2, 3].map((n) => (
                     <CodeRow key={n} riddleNumber={n} code={codesByTeam[team.id]?.[n]} />
                   ))}
@@ -183,6 +176,7 @@ function CodeRow({ riddleNumber, code }: { riddleNumber: number; code?: string }
     <div className="flex items-center justify-between text-xs">
       <span style={{ color: 'rgba(255,255,255,0.4)' }}>Riddle {riddleNumber}</span>
       <button
+        type="button"
         className="font-mono"
         style={{ color: 'var(--color-green)' }}
         onClick={() => {
@@ -209,7 +203,7 @@ function ResultsModal({ results, onClose }: { results: GeneratedRiddleCode[]; on
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="admin-modal-close" onClick={onClose} aria-label="Close">
+        <button type="button" className="admin-modal-close" onClick={onClose} aria-label="Close">
           ×
         </button>
 
@@ -223,7 +217,7 @@ function ResultsModal({ results, onClose }: { results: GeneratedRiddleCode[]; on
         <div className="space-y-4">
           {Array.from(byTeam.entries()).map(([teamId, { teamName, codes }]) => (
             <div key={teamId}>
-              <div className="mb-1.5 text-sm font-medium text-white">{teamName}</div>
+              <div className="mb-1.5 truncate text-sm font-medium text-white">{teamName}</div>
               <div className="space-y-1">
                 {codes
                   .sort((a, b) => a.riddleNumber - b.riddleNumber)
