@@ -18,6 +18,12 @@ export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRo
       code: true,
       size: true,
       leaderId: true,
+      leader: {
+        select: {
+          id: true,
+          user: { select: { name: true, lastName: true } },
+        },
+      },
       memberships: {
         orderBy: { createdAt: 'asc' },
         select: {
@@ -32,14 +38,24 @@ export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRo
     },
   });
 
-  return teams.map((team) => ({
-    id: team.id,
-    name: team.name,
-    code: team.code,
-    size: team.size,
-    leaderId: team.leaderId,
-    members: team.memberships.map((m) => m.participant),
-  }));
+  return teams.map((team) => {
+    const members = team.memberships.map((m) => m.participant);
+
+    // Whether the leader also gets a membership row is the registration app's
+    // call; listing them first when they don't keeps the card from hiding them.
+    if (!members.some((m) => m.id === team.leaderId)) {
+      members.unshift(team.leader);
+    }
+
+    return {
+      id: team.id,
+      name: team.name,
+      code: team.code,
+      size: team.size,
+      leaderId: team.leaderId,
+      members,
+    };
+  });
 }
 
 /**
