@@ -3,15 +3,26 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
+import { usePathname } from 'next/navigation';
+
+const NAV_LINKS = [
+  { href: '/', label: 'Overview' },
+  { href: '/participants', label: 'Participants' },
+  { href: '/teams/competition', label: 'Competition' },
+  { href: '/teams/challenge', label: 'Challenge' },
+] as const;
 
 export function DashboardHeader({ adminName }: { adminName: string }) {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
   return (
     <header className="admin-header">
       <div className="admin-header-inner">
         <div className="admin-header-left">
-          <a className="navbar-logo" href="/">
+          <Link className="navbar-logo" href="/">
             <Image
               src="/trsyp-logo.png"
               loading="eager"
@@ -21,14 +32,19 @@ export function DashboardHeader({ adminName }: { adminName: string }) {
               priority
               style={{ height: '40px', width: 'auto', objectFit: 'contain' }}
             />
-          </a>
+          </Link>
           <nav className="admin-nav admin-nav--desktop">
-            <Link href="/" className="hover:text-white transition-colors">
-              Participants
-            </Link>
-            <Link href="/teams" className="hover:text-white transition-colors">
-              Teams
-            </Link>
+            {NAV_LINKS.map((link) => (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="transition-colors hover:text-white"
+                aria-current={isActive(link.href) ? 'page' : undefined}
+                data-active={isActive(link.href) ? '' : undefined}
+              >
+                {link.label}
+              </Link>
+            ))}
           </nav>
         </div>
 
@@ -50,12 +66,17 @@ export function DashboardHeader({ adminName }: { adminName: string }) {
 
       <nav className={`admin-nav admin-nav--mobile${open ? ' is-open' : ''}`}>
         <span className="admin-nav--mobile-name">{adminName}</span>
-        <Link href="/" onClick={() => setOpen(false)}>
-          Participants
-        </Link>
-        <Link href="/teams" onClick={() => setOpen(false)}>
-          Teams
-        </Link>
+        {NAV_LINKS.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            onClick={() => setOpen(false)}
+            aria-current={isActive(link.href) ? 'page' : undefined}
+            data-active={isActive(link.href) ? '' : undefined}
+          >
+            {link.label}
+          </Link>
+        ))}
       </nav>
     </header>
   );

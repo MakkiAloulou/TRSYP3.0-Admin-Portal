@@ -88,9 +88,10 @@ model Participant {
   roomId            String?
   invitations       Invitation[]
   // Relations
-  teamId            String?            @map("team_id")
-  team              Team?              @relation("TeamMembers", fields: [teamId], references: [id])
-  ownedTeam         Team?              @relation("TeamLeader")
+  // A participant may belong to at most one team per activity — the cap is a
+  // DB-level unique on TeamMembership(participant_id, activity).
+  memberships       TeamMembership[]
+  ledTeams          Team[]             @relation("TeamLeader")
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   internationalInfo InternationalInfo? @relation("ParticipantInternationalInfo")
 
@@ -98,19 +99,44 @@ model Participant {
 }
 
 model Team {
-  id        String   @id @default(uuid())
-  code      String   @unique
+  id        String       @id @default(uuid())
+  code      String       @unique
   name      String
   size      Int // max capacity — enforced at service level
-  leaderId  String   @unique @map("leader_id")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
+  activity  TeamActivity @default(COMPETITION) // which event this team competes in
+  leaderId  String       @map("leader_id")
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  leader  Participant   @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Cascade)
-  members Participant[] @relation("TeamMembers")
+  leader      Participant      @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: Cascade)
+  memberships TeamMembership[]
 
+  // One led team per activity — a leader can head a competition team *and* a
+  // challenge team, but never two of the same kind.
+  @@unique([leaderId, activity])
   @@map("teams")
+}
+
+/// Join row between a participant and a team.
+/// `activity` is denormalised from `Team.activity` (a team's activity never
+/// changes after creation) so the "one team per activity" rule can be enforced
+/// by a unique index instead of application code.
+model TeamMembership {
+  id            String       @id @default(uuid())
+  participantId String       @map("participant_id")
+  teamId        String       @map("team_id")
+  activity      TeamActivity
+  createdAt     DateTime     @default(now()) @map("created_at")
+
+  // Relations
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+  team        Team        @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([participantId, activity])
+  @@unique([participantId, teamId])
+  @@index([teamId])
+  @@map("team_memberships")
 }
 
 model InternationalInfo {
@@ -154,6 +180,13 @@ model VisaApplication {
 }
 
 // Enums
+
+/// The event a team competes in. A participant may hold one team per value.
+enum TeamActivity {
+  COMPETITION
+  CHALLENGE
+}
+
 enum ParticipantType {
   NonIEEE
   Student
@@ -215,10 +248,6 @@ enum SB {
   CU
   MSE
   ISGIS
-  
-   
-
-
   Other
 }
 
@@ -383,6 +412,7 @@ model RiddleProgress {
   @@unique([teamId, riddleNumber])
   @@map("riddle_progress")
 }
+
 model RiddleCode {
   id           String   @id @default(uuid())
   teamId       String   @map("team_id")

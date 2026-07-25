@@ -13,6 +13,11 @@ type InternationalInfo = {
   visaApplication: { status: string } | null;
 };
 
+type Membership = {
+  activity: 'COMPETITION' | 'CHALLENGE';
+  team: { name: string; code: string; leaderId: string };
+};
+
 export type ParticipantRow = {
   id: string;
   ieeeId: number | null;
@@ -24,8 +29,7 @@ export type ParticipantRow = {
   participantType: string;
   sb: string | null;
   country: string;
-  team: { name: string; code: string } | null;
-  ownedTeam: { name: string; code: string } | null;
+  memberships: Membership[];
   room: { id: string; status: string } | null;
   internationalInfo: InternationalInfo | null;
   user: {
@@ -39,7 +43,7 @@ export type ParticipantRow = {
 
 export function ParticipantsTable({ participants }: { participants: ParticipantRow[] }) {
   const [selected, setSelected] = useState<ParticipantRow | null>(null);
-  
+
   return (
     <>
       <div className="admin-card overflow-x-auto">
@@ -64,16 +68,7 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
                 </Td>
                 <Td style={{ color: 'rgba(255,255,255,0.5)' }}>{participant.user.email}</Td>
                 <Td>
-                  {participant.participantType === 'NonIEEE' && (
-                    <span className="admin-badge admin-badge--green">
-                      {participant.participantType}
-                    </span>
-                  )}
-                  {participant.participantType === 'Student' && (
-                    <span className="admin-badge admin-badge--pink">
-                      {participant.participantType}
-                    </span>
-                  )}
+                  <TypeBadge participantType={participant.participantType} />
                 </Td>
               </tr>
             ))}
@@ -86,10 +81,17 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
   );
 }
 
-function ParticipantDetailModal({ participant: p, onClose }: { participant: ParticipantRow; onClose: () => void }) {
-  const team = p.ownedTeam ?? p.team ?? null;
-  const isLeader = !!p.ownedTeam;
+function TypeBadge({ participantType }: { participantType: string }) {
+  if (participantType === 'NonIEEE') {
+    return <span className="admin-badge admin-badge--green">{participantType}</span>;
+  }
+  if (participantType === 'Student') {
+    return <span className="admin-badge admin-badge--pink">{participantType}</span>;
+  }
+  return <span className="admin-badge admin-badge--gray">{participantType}</span>;
+}
 
+function ParticipantDetailModal({ participant: p, onClose }: { participant: ParticipantRow; onClose: () => void }) {
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
@@ -108,16 +110,7 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
 
         <div className="mb-5 flex flex-wrap gap-2">
           {!p.user.active && <span className="admin-badge admin-badge--gray">Unverified</span>}
-          {p.participantType === 'NonIEEE' && (
-            <span className="admin-badge admin-badge--green">
-              {p.participantType}
-            </span>
-          )}
-          {p.participantType === 'Student' && (
-            <span className="admin-badge admin-badge--pink">
-              {p.participantType}
-            </span>
-          )}
+          <TypeBadge participantType={p.participantType} />
           {p.paid && <span className="admin-badge admin-badge--green">Paid</span>}
           {p.banned && <span className="admin-badge admin-badge--pink">Banned</span>}
           {p.isInternational && <span className="admin-badge admin-badge--pink">International</span>}
@@ -130,10 +123,8 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
             <Detail label="Country" value={p.country} />
             <Detail label="Student Branch" value={p.sb ?? '—'} />
             <Detail label="IEEE ID" value={p.ieeeId?.toString() ?? '—'} />
-            <Detail
-              label="Team"
-              value={team ? `${team.name} (${team.code})${isLeader ? ' — Leader' : ''}` : '—'}
-            />
+            <Detail label="Competition Team" value={teamLabel(p, 'COMPETITION')} />
+            <Detail label="Challenge Team" value={teamLabel(p, 'CHALLENGE')} />
             <Detail label="Room" value={p.room ? p.room.status : '—'} />
           </DetailGrid>
 
@@ -146,32 +137,14 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
                 International Info
               </h4>
               <DetailGrid>
-                <Detail
-                  label="Date of Birth"
-                  value={formatDate(p.internationalInfo.dateOfBirth)}
-                />
+                <Detail label="Date of Birth" value={formatDate(p.internationalInfo.dateOfBirth)} />
                 <Detail label="Residence" value={p.internationalInfo.cityOfResidence} />
-                <Detail
-                  label="Country of Residence"
-                  value={p.internationalInfo.countryOfResidence}
-                />
+                <Detail label="Country of Residence" value={p.internationalInfo.countryOfResidence} />
                 <Detail label="Affiliation" value={p.internationalInfo.affiliation} />
-                <Detail
-                  label="Arrival"
-                  value={formatDate(p.internationalInfo.expectedArrivalDate)}
-                />
-                <Detail
-                  label="Departure"
-                  value={formatDate(p.internationalInfo.expectedDepartureDate)}
-                />
-                <Detail
-                  label="Visa Letter Needed"
-                  value={p.internationalInfo.requiresVisaLetter ? 'Yes' : 'No'}
-                />
-                <Detail
-                  label="Visa Status"
-                  value={p.internationalInfo.visaApplication?.status ?? '—'}
-                />
+                <Detail label="Arrival" value={formatDate(p.internationalInfo.expectedArrivalDate)} />
+                <Detail label="Departure" value={formatDate(p.internationalInfo.expectedDepartureDate)} />
+                <Detail label="Visa Letter Needed" value={p.internationalInfo.requiresVisaLetter ? 'Yes' : 'No'} />
+                <Detail label="Visa Status" value={p.internationalInfo.visaApplication?.status ?? '—'} />
               </DetailGrid>
             </div>
           )}
@@ -181,6 +154,15 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
   );
 }
 
+/** "Name (CODE) — Leader" for the participant's team in one activity, or "—". */
+function teamLabel(p: ParticipantRow, activity: Membership['activity']) {
+  const membership = p.memberships.find((m) => m.activity === activity);
+  if (!membership) return '—';
+
+  const isLeader = membership.team.leaderId === p.id;
+  return `${membership.team.name} (${membership.team.code})${isLeader ? ' — Leader' : ''}`;
+}
+
 function DetailGrid({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">{children}</div>;
 }
@@ -188,10 +170,7 @@ function DetailGrid({ children }: { children: React.ReactNode }) {
 function Detail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div
-        className="text-[10px] uppercase"
-        style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}
-      >
+      <div className="text-[10px] uppercase" style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}>
         {label}
       </div>
       <div className="text-sm text-white">{value}</div>
@@ -209,10 +188,7 @@ function formatDate(iso: string) {
 
 function Th({ children }: { children: React.ReactNode }) {
   return (
-    <th
-      className="px-4 py-3 text-left text-xs uppercase tracking-wide"
-      style={{ color: 'rgba(255,255,255,0.4)' }}
-    >
+    <th className="px-4 py-3 text-left text-xs uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.4)' }}>
       {children}
     </th>
   );

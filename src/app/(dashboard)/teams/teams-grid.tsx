@@ -21,7 +21,19 @@ export type TeamRow = {
 /** riddleNumber -> code, per team id */
 export type ExistingCodesMap = Record<string, Record<number, string>>;
 
-export function TeamsGrid({ teams, existingCodes }: { teams: TeamRow[]; existingCodes: ExistingCodesMap }) {
+/**
+ * Renders one activity's teams. Riddle codes belong to the challenge only, so
+ * the selection toolbar and per-team code rows are opt-in via `showRiddleCodes`.
+ */
+export function TeamsGrid({
+  teams,
+  existingCodes = {},
+  showRiddleCodes = false,
+}: {
+  teams: TeamRow[];
+  existingCodes?: ExistingCodesMap;
+  showRiddleCodes?: boolean;
+}) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [codesByTeam, setCodesByTeam] = useState<ExistingCodesMap>(existingCodes);
   const [results, setResults] = useState<GeneratedRiddleCode[] | null>(null);
@@ -62,51 +74,69 @@ export function TeamsGrid({ teams, existingCodes }: { teams: TeamRow[]; existing
 
   const allSelected = teams.length > 0 && selected.size === teams.length;
 
+  if (teams.length === 0) {
+    return (
+      <div className="admin-card px-5 py-10 text-center text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
+        No teams yet.
+      </div>
+    );
+  }
+
   return (
     <>
-      <div className="admin-card admin-toolbar">
-        <label className="admin-checkbox-label">
-          <input type="checkbox" className="admin-checkbox" checked={allSelected} onChange={toggleAll} />
-          {allSelected ? 'All selected' : 'Select all'}
-          {selected.size > 0 && (
-            <span className="admin-badge admin-badge--gray">
-              {selected.size}/{teams.length}
-            </span>
-          )}
-        </label>
+      {showRiddleCodes && (
+        <div className="admin-card admin-toolbar">
+          <label className="admin-checkbox-label">
+            <input type="checkbox" className="admin-checkbox" checked={allSelected} onChange={toggleAll} />
+            {allSelected ? 'All selected' : 'Select all'}
+            {selected.size > 0 && (
+              <span className="admin-badge admin-badge--gray">
+                {selected.size}/{teams.length}
+              </span>
+            )}
+          </label>
 
-        <button
-          type="button"
-          className="admin-btn-primary px-5 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-40"
-          disabled={selected.size === 0 || isPending}
-          onClick={handleGenerate}
-        >
-          {isPending ? 'Generating…' : 'Generate riddle codes'}
-        </button>
-      </div>
+          <button
+            type="button"
+            className="admin-btn-primary px-5 py-2.5 text-sm disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={selected.size === 0 || isPending}
+            onClick={handleGenerate}
+          >
+            {isPending ? 'Generating…' : 'Generate riddle codes'}
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {teams.map((team) => {
           const emptySlots = Math.max(team.size - team.members.length, 0);
-          const hasCodes = !!codesByTeam[team.id];
+          const hasCodes = showRiddleCodes && !!codesByTeam[team.id];
+
+          const title = (
+            <span className="min-w-0">
+              <h3 className="admin-heading truncate text-sm text-white">{team.name}</h3>
+              <p className="mt-0.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+                Code: {team.code}
+              </p>
+            </span>
+          );
 
           return (
             <div key={team.id} className="admin-card flex flex-col p-5">
               <div className="mb-4 flex items-start justify-between gap-3">
-                <label className="admin-checkbox-label min-w-0 items-start">
-                  <input
-                    type="checkbox"
-                    className="admin-checkbox mt-0.5"
-                    checked={selected.has(team.id)}
-                    onChange={() => toggle(team.id)}
-                  />
-                  <span className="min-w-0">
-                    <h3 className="admin-heading truncate text-sm text-white">{team.name}</h3>
-                    <p className="mt-0.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                      Code: {team.code}
-                    </p>
-                  </span>
-                </label>
+                {showRiddleCodes ? (
+                  <label className="admin-checkbox-label min-w-0 items-start">
+                    <input
+                      type="checkbox"
+                      className="admin-checkbox mt-0.5"
+                      checked={selected.has(team.id)}
+                      onChange={() => toggle(team.id)}
+                    />
+                    {title}
+                  </label>
+                ) : (
+                  title
+                )}
 
                 <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <span className={`admin-badge admin-badge--${team.members.length === team.size ? 'pink' : 'green'}`}>

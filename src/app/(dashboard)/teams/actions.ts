@@ -22,8 +22,10 @@ const RIDDLE_NUMBERS = [1, 2, 3] as const;
 export async function generateRiddleCodes(teamIds: string[]): Promise<GeneratedRiddleCode[]> {
   if (teamIds.length === 0) return [];
 
+  // Riddle codes only exist for the challenge — filtering on activity here means
+  // a stray competition team id can never produce one.
   const teams = await prisma.team.findMany({
-    where: { id: { in: teamIds } },
+    where: { id: { in: teamIds }, activity: 'CHALLENGE' },
     select: { id: true, name: true, code: true },
   });
 
@@ -43,6 +45,6 @@ export async function generateRiddleCodes(teamIds: string[]): Promise<GeneratedR
     }
   }
 
-  revalidatePath('/teams');
+  revalidatePath('/teams/challenge');
   return results;
 }
