@@ -59,7 +59,6 @@ export default async function DashboardPage() {
   const competitionTeams = teams.filter((t) => t.activity === 'COMPETITION');
   const challengeTeams = teams.filter((t) => t.activity === 'CHALLENGE');
   const fullTeams = teams.filter((t) => t._count.memberships >= t.size).length;
-  const teamedParticipants = teams.reduce((sum, t) => sum + t._count.memberships, 0);
 
   const confirmedRooms = rooms.filter((r) => r.status === 'Confirmed').length;
 
@@ -88,17 +87,19 @@ export default async function DashboardPage() {
           sub={`${sharePct(paid, total)} of registrations`}
           accent="var(--viz-1)"
         />
-        <StatTile label="Competition teams" value={competitionTeams.length} sub={`${fullTeams} full overall`} />
-        <StatTile label="Challenge teams" value={challengeTeams.length} sub={`${teamedParticipants} seats taken`} />
         <StatTile
-          label="International"
-          value={international}
-          sub={`${sharePct(international, total)} of registrations`}
-          accent="var(--viz-2)"
+          label="Competition teams"
+          value={competitionTeams.length}
+          sub={`${sharePct(competitionTeams.length, teams.length)} of all teams`}
+        />
+        <StatTile
+          label="Challenge teams"
+          value={challengeTeams.length}
+          sub={`${sharePct(challengeTeams.length, teams.length)} of all teams`}
         />
       </div>
 
-      <ChartCard title="Registrations over time" subtitle="Cumulative sign-ups since the first registration">
+      <ChartCard title="Registrations over time" subtitle="Cumulative registrations since the first registration">
         <TrendChart points={trend} />
       </ChartCard>
 
@@ -131,19 +132,6 @@ export default async function DashboardPage() {
               {confirmedRooms}/{rooms.length} rooms confirmed
             </span>
           </div>
-        </ChartCard>
-
-        <ChartCard title="Teams by activity" subtitle={`${teams.length} teams · ${fullTeams} at full capacity`}>
-          <ShareBar
-            slices={[
-              { label: 'Competition', value: competitionTeams.length, color: VIZ[0] },
-              { label: 'Challenge', value: challengeTeams.length, color: VIZ[2] },
-            ]}
-          />
-        </ChartCard>
-
-        <ChartCard title="Visa pipeline" subtitle={`${visaApplications.length} applications`}>
-          <StatusList items={visaItems} />
         </ChartCard>
 
         <ChartCard title="Top student branches" subtitle="Ten largest delegations">
