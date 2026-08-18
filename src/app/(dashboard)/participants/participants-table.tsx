@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { buildParticipantsCsv, downloadCsv, participantsCsvFilename } from './export-csv';
 
 type InternationalInfo = {
   dateOfBirth: string;
@@ -44,8 +45,23 @@ export type ParticipantRow = {
 export function ParticipantsTable({ participants }: { participants: ParticipantRow[] }) {
   const [selected, setSelected] = useState<ParticipantRow | null>(null);
 
+  function handleExport() {
+    downloadCsv(buildParticipantsCsv(participants), participantsCsvFilename());
+  }
+
   return (
     <>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          className="admin-btn-secondary px-4 py-2 text-sm"
+          onClick={handleExport}
+          disabled={participants.length === 0}
+        >
+          Export CSV
+        </button>
+      </div>
+
       <div className="admin-card overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
