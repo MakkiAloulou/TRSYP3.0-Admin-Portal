@@ -76,3 +76,65 @@ export async function getRiddleCodes(teamIds: string[]): Promise<ExistingCodesMa
   }
   return existingCodes;
 }
+
+/**
+ * Loads all participants who are registered in a specific activity (COMPETITION or CHALLENGE),
+ * including their team membership information.
+ */
+export async function getParticipantsByActivity(activity: TeamActivity) {
+  const participants = await prisma.participant.findMany({
+    where: {
+      memberships: {
+        some: {
+          activity,
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true,
+      ieeeId: true,
+      phone: true,
+      gender: true,
+      paid: true,
+      isInternational: true,
+      banned: true,
+      participantType: true,
+      sb: true,
+      country: true,
+      // One membership per activity (DB-enforced), so this is at most 2 rows.
+      memberships: {
+        select: {
+          activity: true,
+          team: { select: { name: true, code: true, leaderId: true } },
+        },
+      },
+      room: { select: { id: true, status: true } },
+      internationalInfo: {
+        select: {
+          dateOfBirth: true,
+          countryOfResidence: true,
+          cityOfResidence: true,
+          affiliation: true,
+          expectedArrivalDate: true,
+          expectedDepartureDate: true,
+          requiresVisaLetter: true,
+          visaApplication: { select: { status: true } },
+        },
+      },
+      user: {
+        select: {
+          name: true,
+          lastName: true,
+          email: true,
+          active: true,
+          createdAt: true,
+        },
+      },
+    },
+  });
+
+  // JSON round-trip keeps Server -> Client Component props simple: Dates
+  // become ISO strings, which is all the export needs for CSV anyway.
+  return JSON.parse(JSON.stringify(participants));
+}
