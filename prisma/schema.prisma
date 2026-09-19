@@ -78,6 +78,10 @@ model Participant {
   paid              Boolean            @default(false)
   isInternational   Boolean            @default(false) @map("is_international")
   banned            Boolean            @default(false)
+  // Added by backend migrations 20260816000000_add_participant_is_ras and
+  // 20260918000000_add_participant_facebook_link; this schema was stale.
+  isRas             Boolean            @default(false) @map("is_ras")
+  facebookLink      String?            @map("facebook_link")
   participantType   ParticipantType    @map("participant_type")
   sb                SB?
   country           COUNTRY

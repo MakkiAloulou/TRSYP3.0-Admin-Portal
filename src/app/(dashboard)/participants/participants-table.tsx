@@ -1,7 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { buildParticipantsCsv, downloadCsv, participantsCsvFilename } from './export-csv';
+import { PAYMENT_STATE_COLORS, PAYMENT_STATE_LABELS, derivePaymentState } from '@/lib/payment';
 
 type InternationalInfo = {
   dateOfBirth: string;
@@ -33,6 +35,10 @@ export type ParticipantRow = {
   memberships: Membership[];
   room: { id: string; status: string } | null;
   internationalInfo: InternationalInfo | null;
+  /** Id of this participant's PENDING proof, if one is waiting. The participant
+   *  record only carries `paid`, so this is what separates "awaiting review"
+   *  from "nothing submitted". Joined in by the page, not a Participant field. */
+  pendingProofId: string | null;
   user: {
     name: string;
     lastName: string;
@@ -69,6 +75,7 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
               <Th>Name</Th>
               <Th>Email</Th>
               <Th>Type</Th>
+              <Th>Payment</Th>
             </tr>
           </thead>
           <tbody>
@@ -86,6 +93,11 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
                 <Td>
                   <TypeBadge participantType={participant.participantType} />
                 </Td>
+                {/* Clicking the status opens the row modal, so the link stops
+                    propagation and goes straight to the proof instead. */}
+                <Td onClick={(e) => e.stopPropagation()}>
+                  <PaymentStatus participant={participant} />
+                </Td>
               </tr>
             ))}
           </tbody>
@@ -94,6 +106,44 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
 
       {selected && <ParticipantDetailModal participant={selected} onClose={() => setSelected(null)} />}
     </>
+  );
+}
+
+/** Same three states in the detail modal, in the badge language used there. */
+function PaymentBadge({ participant }: { participant: ParticipantRow }) {
+  const state = derivePaymentState(participant.paid, participant.pendingProofId !== null);
+  const variant =
+    state === 'PAID' ? 'admin-badge--green' : state === 'PENDING' ? 'admin-badge--amber' : 'admin-badge--pink';
+  return <span className={`admin-badge ${variant}`}>{PAYMENT_STATE_LABELS[state]}</span>;
+}
+
+/**
+ * Three states from two sources: `paid` on the participant, plus whether a
+ * PENDING proof exists. A pending one links through to it in the review queue.
+ */
+function PaymentStatus({ participant }: { participant: ParticipantRow }) {
+  const state = derivePaymentState(participant.paid, participant.pendingProofId !== null);
+  const dot = <span className="pay-dot" style={{ background: PAYMENT_STATE_COLORS[state] }} />;
+
+  if (state === 'PENDING' && participant.pendingProofId) {
+    return (
+      <Link
+        href={`/payments?status=PENDING&proof=${participant.pendingProofId}`}
+        className="pay-state hover:underline"
+        style={{ color: PAYMENT_STATE_COLORS.PENDING }}
+        title="Review this proof"
+      >
+        {dot}
+        {PAYMENT_STATE_LABELS.PENDING}
+      </Link>
+    );
+  }
+
+  return (
+    <span className="pay-state" style={{ color: PAYMENT_STATE_COLORS[state] }}>
+      {dot}
+      {PAYMENT_STATE_LABELS[state]}
+    </span>
   );
 }
 
@@ -127,7 +177,7 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
         <div className="mb-5 flex flex-wrap gap-2">
           {!p.user.active && <span className="admin-badge admin-badge--gray">Unverified</span>}
           <TypeBadge participantType={p.participantType} />
-          {p.paid && <span className="admin-badge admin-badge--green">Paid</span>}
+          <PaymentBadge participant={p} />
           {p.banned && <span className="admin-badge admin-badge--pink">Banned</span>}
           {p.isInternational && <span className="admin-badge admin-badge--pink">International</span>}
         </div>
@@ -214,13 +264,15 @@ function Td({
   children,
   className = '',
   style,
+  onClick,
 }: {
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
+  onClick?: React.MouseEventHandler<HTMLTableCellElement>;
 }) {
   return (
-    <td className={`px-4 py-3 ${className}`} style={style}>
+    <td className={`px-4 py-3 ${className}`} style={style} onClick={onClick}>
       {children}
     </td>
   );
