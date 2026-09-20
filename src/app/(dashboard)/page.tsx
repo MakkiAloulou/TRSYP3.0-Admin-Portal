@@ -114,6 +114,18 @@ export default async function DashboardPage() {
       </ChartCard>
 
       <div className="viz-grid">
+        <ChartCard title="Top student branches" subtitle="Ten largest delegations">
+          <RankedBars items={topN(bySb, 10)} emptyLabel="No student branch recorded yet" />
+        </ChartCard>
+
+        <ChartCard title="Participants by region" subtitle="Governorate of each student branch">
+          <RegionMap counts={byRegion} />
+          <div className="viz-footnote">
+            <span>{placed} placed by branch</span>
+            {unplaced > 0 && <span>{unplaced} unmapped</span>}
+          </div>
+        </ChartCard>
+
         <ChartCard title="IEEE vs non-IEEE" subtitle={`${total} participants`}>
           <ShareBar
             slices={[
@@ -141,18 +153,6 @@ export default async function DashboardPage() {
             <span>
               {confirmedRooms}/{rooms.length} rooms confirmed
             </span>
-          </div>
-        </ChartCard>
-
-        <ChartCard title="Top student branches" subtitle="Ten largest delegations">
-          <RankedBars items={topN(bySb, 10)} emptyLabel="No student branch recorded yet" />
-        </ChartCard>
-
-        <ChartCard title="Participants by region" subtitle="Governorate of each student branch">
-          <RegionMap counts={byRegion} />
-          <div className="viz-footnote">
-            <span>{placed} placed by branch</span>
-            {unplaced > 0 && <span>{unplaced} unmapped</span>}
           </div>
         </ChartCard>
       </div>
