@@ -153,6 +153,14 @@ button {
   border-color: rgba(245, 158, 11, 0.25);
 }
 
+/* Distinct from --pink: rejected and never-submitted are different states and
+   must not read as the same colour. */
+.admin-badge--red {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
 .admin-row {
   transition: background 0.15s ease;
 }

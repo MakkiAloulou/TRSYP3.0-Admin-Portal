@@ -116,27 +116,38 @@ export function validateRejectionReason(reason: string): string | null {
 
 /* ─── Participants page payment status ──────────────────────────────── */
 
-export const PAYMENT_STATES = ['PAID', 'PENDING', 'NOT_PAID'] as const;
+export const PAYMENT_STATES = ['PAID', 'PENDING', 'REJECTED', 'NOT_PAID'] as const;
 export type PaymentState = (typeof PAYMENT_STATES)[number];
 
 export const PAYMENT_STATE_LABELS: Record<PaymentState, string> = {
   PAID: 'Paid',
   PENDING: 'Pending',
-  NOT_PAID: 'Not paid',
+  REJECTED: 'Rejected',
+  NOT_PAID: 'Not Paid',
 };
 
 /** Same colour language as the participant-facing dashboard. */
 export const PAYMENT_STATE_COLORS: Record<PaymentState, string> = {
   PAID: '#00e87a',
   PENDING: '#f59e0b',
+  REJECTED: '#ef4444',
   NOT_PAID: '#ff1d78',
 };
 
 /**
- * The participant record only carries `paid`, so a pending proof is the one
- * thing that distinguishes "submitted, awaiting review" from "nothing sent".
+ * The participant record carries only `paid`, so the status of their most
+ * recent proof is what separates the other three: awaiting review, turned
+ * down, and nothing ever sent.
+ *
+ * Takes the *latest* proof deliberately — a rejected participant can resubmit,
+ * so an older row says nothing about where they stand now.
  */
-export function derivePaymentState(paid: boolean, hasPendingProof: boolean): PaymentState {
+export function derivePaymentState(
+  paid: boolean,
+  latestProofStatus: PaymentProofStatus | null,
+): PaymentState {
   if (paid) return 'PAID';
-  return hasPendingProof ? 'PENDING' : 'NOT_PAID';
+  if (latestProofStatus === 'PENDING') return 'PENDING';
+  if (latestProofStatus === 'REJECTED') return 'REJECTED';
+  return 'NOT_PAID';
 }

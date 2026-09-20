@@ -66,13 +66,18 @@ export default async function ParticipantsPage() {
   ]);
 
   // A failed lookup must not take the whole page down — every row falls back to
-  // Paid / Not paid — but it is called out below rather than degrading quietly,
-  // since a real pending proof would otherwise read as "Not paid".
-  const pendingProofByParticipant = new Map(
+  // Paid / Not Paid — but it is called out below rather than degrading quietly,
+  // since a real pending proof would otherwise read as never submitted.
+  //
+  // The latest proof's status is what the column needs, not merely whether a
+  // pending one exists: a rejected participant who resubmits is Pending again,
+  // and one who never resubmits stays Rejected rather than Not Paid.
+  const latestProofByParticipant = new Map(
     pendingProofs.ok
-      ? latestProofPerParticipant(pendingProofs.data.data)
-          .filter((proof) => proof.status === 'PENDING')
-          .map((proof) => [proof.participantId, proof.id])
+      ? latestProofPerParticipant(pendingProofs.data.data).map((proof) => [
+          proof.participantId,
+          { id: proof.id, status: proof.status },
+        ])
       : [],
   );
 
@@ -86,7 +91,7 @@ export default async function ParticipantsPage() {
 
   const rows = serialized.map((participant: { id: string }) => ({
     ...participant,
-    pendingProofId: pendingProofByParticipant.get(participant.id) ?? null,
+    latestProof: latestProofByParticipant.get(participant.id) ?? null,
   }));
 
   return (

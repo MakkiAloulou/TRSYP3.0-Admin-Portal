@@ -8,6 +8,7 @@ import {
   PAYMENT_STATE_COLORS,
   PAYMENT_STATE_LABELS,
   derivePaymentState,
+  type PaymentProofStatus,
   type PaymentState,
 } from '@/lib/payment';
 
@@ -41,10 +42,11 @@ export type ParticipantRow = {
   memberships: Membership[];
   room: { id: string; status: string } | null;
   internationalInfo: InternationalInfo | null;
-  /** Id of this participant's PENDING proof, if one is waiting. The participant
-   *  record only carries `paid`, so this is what separates "awaiting review"
-   *  from "nothing submitted". Joined in by the page, not a Participant field. */
-  pendingProofId: string | null;
+  /** This participant's most recent proof, if they have ever submitted one. The
+   *  participant record carries only `paid`, so this is what separates awaiting
+   *  review from turned down from never sent. Joined in by the page from the
+   *  payments API, not a Participant field. */
+  latestProof: { id: string; status: PaymentProofStatus } | null;
   user: {
     name: string;
     lastName: string;
@@ -95,7 +97,7 @@ function matches(p: ParticipantRow, filters: Filters, haystack: string) {
   if (query && !haystack.includes(query)) return false;
 
   if (filters.payment !== 'ALL') {
-    if (derivePaymentState(p.paid, p.pendingProofId !== null) !== filters.payment) return false;
+    if (derivePaymentState(p.paid, p.latestProof?.status ?? null) !== filters.payment) return false;
   }
 
   if (filters.type !== 'ALL' && p.participantType !== filters.type) return false;
@@ -304,30 +306,37 @@ function Select({
 
 /** Same three states in the detail modal, in the badge language used there. */
 function PaymentBadge({ participant }: { participant: ParticipantRow }) {
-  const state = derivePaymentState(participant.paid, participant.pendingProofId !== null);
-  const variant =
-    state === 'PAID' ? 'admin-badge--green' : state === 'PENDING' ? 'admin-badge--amber' : 'admin-badge--pink';
-  return <span className={`admin-badge ${variant}`}>{PAYMENT_STATE_LABELS[state]}</span>;
+  const state = derivePaymentState(participant.paid, participant.latestProof?.status ?? null);
+  return <span className={`admin-badge ${BADGE_VARIANTS[state]}`}>{PAYMENT_STATE_LABELS[state]}</span>;
 }
 
+const BADGE_VARIANTS: Record<PaymentState, string> = {
+  PAID: 'admin-badge--green',
+  PENDING: 'admin-badge--amber',
+  REJECTED: 'admin-badge--red',
+  NOT_PAID: 'admin-badge--pink',
+};
+
 /**
- * Three states from two sources: `paid` on the participant, plus whether a
- * PENDING proof exists. A pending one links through to it in the review queue.
+ * Four states from two sources: `paid` on the participant, plus the status of
+ * their most recent proof. Anything still reviewable links through to it.
  */
 function PaymentStatus({ participant }: { participant: ParticipantRow }) {
-  const state = derivePaymentState(participant.paid, participant.pendingProofId !== null);
+  const proof = participant.latestProof;
+  const state = derivePaymentState(participant.paid, proof?.status ?? null);
   const dot = <span className="pay-dot" style={{ background: PAYMENT_STATE_COLORS[state] }} />;
 
-  if (state === 'PENDING' && participant.pendingProofId) {
+  // Paid needs no link — approving is final, so there is nothing to act on.
+  if (proof && (state === 'PENDING' || state === 'REJECTED')) {
     return (
       <Link
-        href={`/payments?status=PENDING&proof=${participant.pendingProofId}`}
+        href={`/payments?status=${proof.status}&proof=${proof.id}`}
         className="pay-state hover:underline"
-        style={{ color: PAYMENT_STATE_COLORS.PENDING }}
-        title="Review this proof"
+        style={{ color: PAYMENT_STATE_COLORS[state] }}
+        title={state === 'PENDING' ? 'Review this proof' : 'See why this was rejected'}
       >
         {dot}
-        {PAYMENT_STATE_LABELS.PENDING}
+        {PAYMENT_STATE_LABELS[state]}
       </Link>
     );
   }
