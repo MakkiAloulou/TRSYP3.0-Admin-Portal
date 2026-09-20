@@ -1,10 +1,10 @@
 import { prisma } from '@/lib/prisma';
 import { apiFetch } from '@/lib/trsyp-api';
-import type { PaymentProofRow } from '@/lib/payment';
+import { latestProofPerParticipant, type PaymentProofRow } from '@/lib/payment';
 import { ParticipantsTable } from './participants-table';
 
-/** Enough to cover every participant, since each holds at most one proof. */
-const PENDING_PROOFS_TAKE = 500;
+/** Generous enough to cover every participant's full submission history. */
+const PROOFS_TAKE = 1000;
 
 export default async function ParticipantsPage() {
   // Participants stay on Prisma: the REST endpoint returns none of the nested
@@ -59,20 +59,25 @@ export default async function ParticipantsPage() {
         },
       },
     }),
-    apiFetch<{ data: PaymentProofRow[]; total: number }>(
-      `/payment/admin/proofs?status=PENDING&take=${PENDING_PROOFS_TAKE}`,
-    ),
+    // Every proof, not just pending ones: a participant's status follows their
+    // most recent submission, so the history has to be collapsed before asking
+    // whether they are awaiting review. Same rule the queue page applies.
+    apiFetch<{ data: PaymentProofRow[]; total: number }>(`/payment/admin/proofs?take=${PROOFS_TAKE}`),
   ]);
 
   // A failed lookup must not take the whole page down — every row falls back to
   // Paid / Not paid — but it is called out below rather than degrading quietly,
   // since a real pending proof would otherwise read as "Not paid".
   const pendingProofByParticipant = new Map(
-    pendingProofs.ok ? pendingProofs.data.data.map((proof) => [proof.participantId, proof.id]) : [],
+    pendingProofs.ok
+      ? latestProofPerParticipant(pendingProofs.data.data)
+          .filter((proof) => proof.status === 'PENDING')
+          .map((proof) => [proof.participantId, proof.id])
+      : [],
   );
 
-  // One proof per participant makes 500 ample; if that ever stops holding, the
-  // column would silently miss rows, so say so instead.
+  // If the history ever outgrows the fetch, the column would silently miss
+  // rows, so say so instead.
   const truncated = pendingProofs.ok && pendingProofs.data.total > pendingProofs.data.data.length;
 
   // JSON round-trip keeps Server -> Client Component props simple: Dates
@@ -107,7 +112,7 @@ export default async function ParticipantsPage() {
         <div className="pay-banner">
           <span aria-hidden>!</span>
           <span>
-            More than {PENDING_PROOFS_TAKE} pending proofs exist; some rows may show as Not paid.
+            More than {PROOFS_TAKE} proofs exist; some rows may show as Not paid.
           </span>
         </div>
       )}

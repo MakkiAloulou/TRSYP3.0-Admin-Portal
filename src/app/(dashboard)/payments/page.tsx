@@ -2,6 +2,8 @@ import { apiFetch } from '@/lib/trsyp-api';
 import {
   PAYMENT_PROOF_STATUSES,
   STATUS_LABELS,
+  byOldestFirst,
+  latestProofPerParticipant,
   type PaymentProofRow,
   type PaymentProofStatus,
 } from '@/lib/payment';
@@ -9,6 +11,15 @@ import { PaymentsTable } from './payments-table';
 
 const DEFAULT_TAKE = 20;
 const MAX_TAKE = 100;
+
+/**
+ * The queue shows one row per participant, so it cannot let the backend
+ * paginate: collapsing a page of 20 proofs could leave any number of rows, and
+ * the counts would not survive it. Everything is fetched, collapsed, then
+ * paged here. At ~300 participants holding a couple of proofs each this is one
+ * modest request; revisit if submissions ever outgrow it.
+ */
+const FETCH_ALL = 1000;
 
 type SearchParams = {
   status?: string;
@@ -31,9 +42,9 @@ function parseStatus(value: string | undefined): PaymentProofStatus | 'ALL' {
     : 'PENDING';
 }
 
-function subtitle(status: PaymentProofStatus | 'ALL', total: number) {
-  if (status === 'PENDING') return `${total} awaiting review`;
-  if (status === 'ALL') return `${total} in total`;
+function subtitle(status: PaymentProofStatus | 'ALL', total: number, pending: number) {
+  if (status === 'PENDING') return `${pending} awaiting review`;
+  if (status === 'ALL') return `${total} participants`;
   return `${total} ${STATUS_LABELS[status].toLowerCase()}`;
 }
 
@@ -50,12 +61,11 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const take = parseInteger(params.take, DEFAULT_TAKE, MAX_TAKE) || DEFAULT_TAKE;
   const skip = parseInteger(params.skip, 0, Number.MAX_SAFE_INTEGER);
 
-  // The backend orders oldest first — it is a queue, so the longest wait is
-  // reviewed first. Omitting `status` asks for every status.
-  const query = new URLSearchParams({ skip: String(skip), take: String(take) });
-  if (status !== 'ALL') query.set('status', status);
-
-  const result = await apiFetch<ProofsResponse>(`/payment/admin/proofs?${query}`);
+  // Fetched without a status filter on purpose. Collapsing has to happen across
+  // a participant's whole history: filtering first would surface a superseded
+  // PENDING proof from before a resubmission, which is exactly what this is
+  // meant to hide.
+  const result = await apiFetch<ProofsResponse>(`/payment/admin/proofs?take=${FETCH_ALL}`);
 
   if (!result.ok) {
     return (
@@ -68,16 +78,32 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     );
   }
 
-  const { data: proofs, total } = result.data;
+  const current = latestProofPerParticipant(result.data.data).sort(byOldestFirst);
+  const matching = status === 'ALL' ? current : current.filter((proof) => proof.status === status);
+
+  const total = matching.length;
+  const proofs = matching.slice(skip, skip + take);
+  const pending = current.filter((proof) => proof.status === 'PENDING').length;
+  const truncated = result.data.total > result.data.data.length;
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="admin-heading text-lg text-white">Payments</h2>
         <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          {subtitle(status, total)}
+          {subtitle(status, total, pending)}
         </p>
       </div>
+
+      {truncated && (
+        <div className="pay-banner">
+          <span aria-hidden>!</span>
+          <span>
+            Only the first {FETCH_ALL} of {result.data.total} proofs were read, so some participants may be missing
+            from this queue.
+          </span>
+        </div>
+      )}
 
       <PaymentsTable
         proofs={proofs}

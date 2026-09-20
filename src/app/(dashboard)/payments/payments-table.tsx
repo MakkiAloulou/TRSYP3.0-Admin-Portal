@@ -515,8 +515,9 @@ function RejectModal({
 
         <h3 className="admin-heading mb-1 text-lg text-white">Reject payment</h3>
         <p className="mb-4 text-sm" style={{ color: 'rgba(255,255,255,0.5)' }}>
-          {proof.participantName} sees this word for word, and can submit a new receipt afterwards. Say what they need to
-          fix &mdash; &ldquo;screenshot unreadable&rdquo;, &ldquo;amount doesn&apos;t match&rdquo;.
+          <strong className="text-white">{proof.participantName}</strong>{' '}
+          sees this word for word, and can submit a new receipt afterwards. Say what they need to fix &mdash;
+          &ldquo;screenshot unreadable&rdquo;, &ldquo;amount doesn&apos;t match&rdquo;.
         </p>
 
         <textarea

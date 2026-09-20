@@ -48,6 +48,32 @@ export type PaymentProofRow = {
 };
 
 /**
+ * Collapses a participant's submission history to their most recent proof.
+ *
+ * A participant can hold several proofs — resubmitting after a rejection adds
+ * another — but only the newest one reflects where they actually stand, so the
+ * queue shows that and discards the rest. Nothing prevents duplicates at the
+ * database level: payment_proofs indexes participant_id without a unique.
+ */
+export function latestProofPerParticipant(proofs: PaymentProofRow[]): PaymentProofRow[] {
+  const latest = new Map<string, PaymentProofRow>();
+
+  for (const proof of proofs) {
+    const held = latest.get(proof.participantId);
+    if (!held || Date.parse(proof.createdAt) > Date.parse(held.createdAt)) {
+      latest.set(proof.participantId, proof);
+    }
+  }
+
+  return [...latest.values()];
+}
+
+/** Oldest first: the queue is worked front to back, longest wait first. */
+export function byOldestFirst(a: PaymentProofRow, b: PaymentProofRow) {
+  return Date.parse(a.createdAt) - Date.parse(b.createdAt);
+}
+
+/**
  * Cash is handed to a committee member in person, so there is never a receipt
  * to open. Any other method without a file is a genuine anomaly, and the two
  * must not look alike in the UI.

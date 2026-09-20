@@ -38,7 +38,10 @@ export const API_STATUS = {
 
 export async function apiFetch<T>(
   path: string,
-  init?: { method?: 'GET' | 'POST'; body?: unknown },
+  init?: {
+    method?: 'GET' | 'POST';
+    body?: unknown;
+  },
 ): Promise<ApiResult<T>> {
   if (!BASE_URL) {
     return {
@@ -57,15 +60,17 @@ export async function apiFetch<T>(
     return { ok: false, status: API_STATUS.UNAUTHORISED, message: 'Your session has expired. Sign in again.' };
   }
 
+  const serialised = init?.body === undefined ? undefined : JSON.stringify(init.body);
+
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
       method: init?.method ?? 'GET',
       headers: {
         Authorization: `Bearer ${session.access_token}`,
-        ...(init?.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        ...(serialised === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
-      body: init?.body === undefined ? undefined : JSON.stringify(init.body),
+      body: serialised,
       // Admin review data must never be served from a cache.
       cache: 'no-store',
     });
@@ -74,7 +79,16 @@ export async function apiFetch<T>(
   }
 
   if (!response.ok) {
-    return { ok: false, status: response.status, message: await readError(response) };
+    const raw = await response.text();
+    // Full body to the server console: the UI shows one line, but a generic
+    // "Validation failed" is only diagnosable with what the backend actually
+    // sent back, and which field it objected to.
+    console.error(`[trsyp-api] ${init?.method ?? 'GET'} ${BASE_URL}${path} -> ${response.status}`, {
+      sentBody: serialised ?? null,
+      sentContentType: serialised === undefined ? null : 'application/json',
+      received: raw,
+    });
+    return { ok: false, status: response.status, message: readError(response, raw) };
   }
 
   // 204 and other empty bodies are valid successes.
@@ -97,22 +111,39 @@ export async function apiFetch<T>(
 
 /** Nest error bodies are `{ statusCode, message, error }`, where `message` is
  *  a string for most throws and an array for validation failures. */
-async function readError(response: Response): Promise<string> {
+function readError(response: Response, raw: string): string {
+  // An HTML error body means the request never reached the API: the base URL
+  // is pointing at a web server instead. Worth saying outright, because the
+  // generic "Not found" this would otherwise produce sends you hunting for a
+  // missing proof rather than a misconfigured URL.
+  if (!response.headers.get('content-type')?.includes('application/json')) {
+    return `TRSYP_API_URL (${BASE_URL}) does not point at the API — got HTTP ${response.status} as ${
+      response.headers.get('content-type') ?? 'an unknown type'
+    }.`;
+  }
+
   let detail = '';
   try {
-    const body = await response.json();
+    const body = JSON.parse(raw);
     detail = Array.isArray(body?.message) ? body.message.join(', ') : (body?.message ?? '');
   } catch {
-    // Non-JSON error body — fall through to the generic wording below.
+    // Valid JSON content-type but an unparseable body — fall through below.
   }
 
   switch (response.status) {
     case API_STATUS.BAD_REQUEST:
       return detail || 'The backend rejected that request.';
+    // 401 and 403 keep the backend's own wording when it sends any, since the
+    // two guards fail for different reasons and the distinction is the whole
+    // diagnostic: a role-claim guard and an admins-table guard both land here.
     case API_STATUS.UNAUTHORISED:
-      return 'Your session has expired. Sign in again.';
+      return detail
+        ? `Not signed in as far as the backend is concerned: "${detail}".`
+        : 'Your session has expired. Sign in again.';
     case API_STATUS.FORBIDDEN:
-      return 'Your account is not authorised to review payments.';
+      return detail
+        ? `The backend refused this account: "${detail}".`
+        : 'Your account is not authorised to review payments.';
     case API_STATUS.NOT_FOUND:
       return detail || 'Not found.';
     case API_STATUS.CONFLICT:
