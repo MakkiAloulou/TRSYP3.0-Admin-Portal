@@ -136,7 +136,6 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(0,232,122,0.12)' }}>
               <Th>Participant</Th>
-              <Th>Method</Th>
               <Th>Amount</Th>
               <Th>Submitted</Th>
               <Th>Receipt</Th>
@@ -147,7 +146,7 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="viz-empty">
+                <td colSpan={6} className="viz-empty">
                   Nothing in this queue.
                 </td>
               </tr>
@@ -232,7 +231,6 @@ function ProofRow({
           <div className="font-medium text-white">{proof.participantName}</div>
           <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>{proof.participantEmail}</div>
         </Td>
-        <Td>{METHOD_LABELS[proof.method]}</Td>
         <Td>
           <AmountCell proof={proof} />
         </Td>
@@ -273,7 +271,7 @@ function ProofRow({
 
       {proof.status === 'REJECTED' && proof.rejectionReason && (
         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-          <td colSpan={7} className="px-4 pb-3" style={{ color: 'var(--color-pink)', fontSize: 12 }}>
+          <td colSpan={6} className="px-4 pb-3" style={{ color: 'var(--color-pink)', fontSize: 12 }}>
             Reason sent to participant: &ldquo;{proof.rejectionReason}&rdquo;
           </td>
         </tr>
@@ -281,7 +279,7 @@ function ProofRow({
 
       {error && (
         <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-          <td colSpan={7} className="px-4 pb-3">
+          <td colSpan={6} className="px-4 pb-3">
             <span className="pay-error">{error}</span>
           </td>
         </tr>
