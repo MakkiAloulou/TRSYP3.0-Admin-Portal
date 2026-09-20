@@ -1,9 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { buildParticipantsCsv, downloadCsv, participantsCsvFilename } from './export-csv';
-import { PAYMENT_STATE_COLORS, PAYMENT_STATE_LABELS, derivePaymentState } from '@/lib/payment';
+import {
+  PAYMENT_STATES,
+  PAYMENT_STATE_COLORS,
+  PAYMENT_STATE_LABELS,
+  derivePaymentState,
+  type PaymentState,
+} from '@/lib/payment';
 
 type InternationalInfo = {
   dateOfBirth: string;
@@ -48,24 +54,177 @@ export type ParticipantRow = {
   };
 };
 
+type ActivityFilter = 'ALL' | 'COMPETITION' | 'CHALLENGE' | 'NONE';
+
+type Filters = {
+  query: string;
+  payment: PaymentState | 'ALL';
+  type: string;
+  /** A student branch code, 'ALL', or 'NONE' for participants without one. */
+  sb: string;
+  activity: ActivityFilter;
+};
+
+const NO_FILTERS: Filters = {
+  query: '',
+  payment: 'ALL',
+  type: 'ALL',
+  sb: 'ALL',
+  activity: 'ALL',
+};
+
+/** Everything the search box looks through, lowercased once per participant. */
+function searchableText(p: ParticipantRow) {
+  return [
+    p.user.name,
+    p.user.lastName,
+    p.user.email,
+    p.phone,
+    p.ieeeId?.toString(),
+    p.sb,
+    p.country,
+    ...p.memberships.flatMap((m) => [m.team.name, m.team.code]),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function matches(p: ParticipantRow, filters: Filters, haystack: string) {
+  const query = filters.query.trim().toLowerCase();
+  if (query && !haystack.includes(query)) return false;
+
+  if (filters.payment !== 'ALL') {
+    if (derivePaymentState(p.paid, p.pendingProofId !== null) !== filters.payment) return false;
+  }
+
+  if (filters.type !== 'ALL' && p.participantType !== filters.type) return false;
+
+  // Non-students and most internationals have no branch at all, so "No branch"
+  // is a meaningful thing to filter for rather than an empty case.
+  if (filters.sb === 'NONE') {
+    if (p.sb) return false;
+  } else if (filters.sb !== 'ALL' && p.sb !== filters.sb) {
+    return false;
+  }
+
+  if (filters.activity === 'NONE') {
+    if (p.memberships.length > 0) return false;
+  } else if (filters.activity !== 'ALL') {
+    if (!p.memberships.some((m) => m.activity === filters.activity)) return false;
+  }
+
+  return true;
+}
+
 export function ParticipantsTable({ participants }: { participants: ParticipantRow[] }) {
   const [selected, setSelected] = useState<ParticipantRow | null>(null);
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+
+  // Search text is rebuilt only when the list itself changes, not per keystroke.
+  const haystacks = useMemo(
+    () => new Map(participants.map((p) => [p.id, searchableText(p)])),
+    [participants],
+  );
+
+  const visible = useMemo(
+    () => participants.filter((p) => matches(p, filters, haystacks.get(p.id) ?? '')),
+    [participants, filters, haystacks],
+  );
+
+  // Taken from the data rather than the enum, so a new participant type appears
+  // in the dropdown without a code change here.
+  const types = useMemo(() => [...new Set(participants.map((p) => p.participantType))].sort(), [participants]);
+
+  // Only branches that actually appear. The SB enum has ~55 entries and listing
+  // them all would bury the handful in play behind mostly dead options.
+  const branches = useMemo(
+    () => [...new Set(participants.map((p) => p.sb).filter((sb): sb is string => Boolean(sb)))].sort(),
+    [participants],
+  );
+
+  const isFiltered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
+
+  function set<K extends keyof Filters>(key: K, value: Filters[K]) {
+    setFilters((current) => ({ ...current, [key]: value }));
+  }
 
   function handleExport() {
-    downloadCsv(buildParticipantsCsv(participants), participantsCsvFilename());
+    // Exports what is on screen — filtering and then exporting is the point.
+    downloadCsv(buildParticipantsCsv(visible), participantsCsvFilename());
   }
 
   return (
     <>
-      <div className="flex justify-end">
-        <button
-          type="button"
-          className="admin-btn-secondary px-4 py-2 text-sm"
-          onClick={handleExport}
-          disabled={participants.length === 0}
-        >
-          Export CSV
-        </button>
+      <div className="admin-card part-toolbar">
+        <div className="part-toolbar-top">
+          <input
+            type="search"
+            className="admin-input part-search"
+            placeholder="Search name, email, phone, IEEE ID, branch or team"
+            value={filters.query}
+            onChange={(e) => set('query', e.target.value)}
+            aria-label="Search participants"
+          />
+          <button
+            type="button"
+            className="admin-btn-secondary px-4 py-2 text-sm"
+            onClick={handleExport}
+            disabled={visible.length === 0}
+          >
+            Export CSV
+          </button>
+        </div>
+
+        <div className="part-toolbar-filters">
+          <Select
+            label="Payment"
+            value={filters.payment}
+            onChange={(v) => set('payment', v as PaymentState | 'ALL')}
+            options={[
+              { value: 'ALL', label: 'Any payment' },
+              ...PAYMENT_STATES.map((state) => ({ value: state, label: PAYMENT_STATE_LABELS[state] })),
+            ]}
+          />
+          <Select
+            label="Type"
+            value={filters.type}
+            onChange={(v) => set('type', v)}
+            options={[{ value: 'ALL', label: 'Any type' }, ...types.map((t) => ({ value: t, label: t }))]}
+          />
+          <Select
+            label="Student branch"
+            value={filters.sb}
+            onChange={(v) => set('sb', v)}
+            options={[
+              { value: 'ALL', label: 'Any branch' },
+              ...branches.map((sb) => ({ value: sb, label: sb })),
+              { value: 'NONE', label: 'No branch' },
+            ]}
+          />
+          <Select
+            label="Activity"
+            value={filters.activity}
+            onChange={(v) => set('activity', v as ActivityFilter)}
+            options={[
+              { value: 'ALL', label: 'Any activity' },
+              { value: 'COMPETITION', label: 'Competition' },
+              { value: 'CHALLENGE', label: 'Challenge' },
+              { value: 'NONE', label: 'No team' },
+            ]}
+          />
+        </div>
+
+        <div className="part-toolbar-foot">
+          <span>
+            Showing {visible.length} of {participants.length}
+          </span>
+          {isFiltered && (
+            <button type="button" className="pay-link" onClick={() => setFilters(NO_FILTERS)}>
+              Clear filters
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="admin-card overflow-x-auto">
@@ -79,7 +238,14 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
             </tr>
           </thead>
           <tbody>
-            {participants.map((participant) => (
+            {visible.length === 0 && (
+              <tr>
+                <td colSpan={4} className="viz-empty">
+                  No participant matches these filters.
+                </td>
+              </tr>
+            )}
+            {visible.map((participant) => (
               <tr
                 key={participant.id}
                 onClick={() => setSelected(participant)}
@@ -106,6 +272,33 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
 
       {selected && <ParticipantDetailModal participant={selected} onClose={() => setSelected(null)} />}
     </>
+  );
+}
+
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+}) {
+  return (
+    <select
+      className="admin-input part-select"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label={label}
+    >
+      {options.map((option) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
