@@ -1,5 +1,8 @@
 import { prisma } from '@/lib/prisma';
 import { ChartCard, Meter, RankedBars, ShareBar, StatTile, StatusList, TrendChart, VIZ, type TrendPoint } from './charts';
+import { RegionMap } from './region-map';
+import { regionForBranch } from '@/lib/student-branch-region';
+import { REGION_NAMES } from '@/lib/tunisia-regions';
 
 /** Status palette — reserved for state, never reused as a series colour. */
 const STATUS = {
@@ -26,7 +29,6 @@ export default async function DashboardPage() {
         isInternational: true,
         banned: true,
         sb: true,
-        country: true,
         createdAt: true,
         user: { select: { active: true } },
       },
@@ -54,7 +56,15 @@ export default async function DashboardPage() {
     participants.filter((p) => p.sb),
     (p) => p.sb as string,
   );
-  const byCountry = countBy(participants, (p) => p.country);
+  // Effectively every participant is Tunisian, so a country breakdown says
+  // nothing. Student branch does carry location, which resolves to a governorate.
+  const byRegion = REGION_NAMES.map((region) => ({
+    region,
+    value: participants.filter((p) => regionForBranch(p.sb) === region).length,
+  }));
+
+  const placed = byRegion.reduce((sum, r) => sum + r.value, 0);
+  const unplaced = total - placed;
 
   const competitionTeams = teams.filter((t) => t.activity === 'COMPETITION');
   const challengeTeams = teams.filter((t) => t.activity === 'CHALLENGE');
@@ -138,8 +148,12 @@ export default async function DashboardPage() {
           <RankedBars items={topN(bySb, 10)} emptyLabel="No student branch recorded yet" />
         </ChartCard>
 
-        <ChartCard title="Countries" subtitle="Where participants are registering from">
-          <RankedBars items={topN(byCountry, 8)} color={VIZ[2]} />
+        <ChartCard title="Participants by region" subtitle="Governorate of each student branch">
+          <RegionMap counts={byRegion} />
+          <div className="viz-footnote">
+            <span>{placed} placed by branch</span>
+            {unplaced > 0 && <span>{unplaced} unmapped</span>}
+          </div>
         </ChartCard>
       </div>
     </div>
