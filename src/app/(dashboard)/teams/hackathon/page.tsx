@@ -1,8 +1,10 @@
-import { getTeamsByActivity } from '../team-data';
+import { getTeamsByActivity, getParticipantsByActivity } from '../team-data';
 import { FABLAB_AXES, TeamsGrid } from '../teams-grid';
+import { TeamExportButton } from '../team-export-button';
 
 export default async function HackathonTeamsPage() {
   const teams = await getTeamsByActivity('FABLAB');
+  const participants = await getParticipantsByActivity('FABLAB');
   const submitted = teams.filter((t) => t.submissionUrl).length;
   const noAxis = teams.filter((t) => !t.axis).length;
 
@@ -11,7 +13,7 @@ export default async function HackathonTeamsPage() {
       <div>
         <h2 className="admin-heading text-lg text-white">Hackathon Teams</h2>
         <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          {teams.length} total · {submitted} submitted
+          {teams.length} teams, {participants.length} participants · {submitted} submitted
         </p>
       </div>
 
@@ -25,6 +27,8 @@ export default async function HackathonTeamsPage() {
           {noAxis > 0 && <span className="admin-badge admin-badge--gray">No axis: {noAxis}</span>}
         </div>
       )}
+
+      <TeamExportButton activity="FABLAB" participants={participants} />
 
       <TeamsGrid teams={teams} showFablab />
     </div>

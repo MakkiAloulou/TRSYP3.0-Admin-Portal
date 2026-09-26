@@ -1,7 +1,7 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
 import type { TeamActivity } from '@prisma/client';
-import type { ExistingCodesMap, TeamRow } from './teams-grid';
+import type { TeamRow } from './teams-grid';
 
 /**
  * Loads every team for one activity, flattening `memberships` into the plain
@@ -65,25 +65,6 @@ export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRo
 }
 
 /**
- * RiddleCode has no Prisma relation to Team (kept decoupled on purpose), so
- * existing codes are fetched separately and grouped in JS.
- */
-export async function getRiddleCodes(teamIds: string[]): Promise<ExistingCodesMap> {
-  if (teamIds.length === 0) return {};
-
-  const riddleCodes = await prisma.riddleCode.findMany({
-    where: { teamId: { in: teamIds } },
-    select: { teamId: true, riddleNumber: true, code: true },
-  });
-
-  const existingCodes: ExistingCodesMap = {};
-  for (const rc of riddleCodes) {
-    existingCodes[rc.teamId] = { ...(existingCodes[rc.teamId] ?? {}), [rc.riddleNumber]: rc.code };
-  }
-  return existingCodes;
-}
-
-/**
  * Loads all participants who are registered in a specific activity (COMPETITION, CHALLENGE or FABLAB),
  * including their team membership information.
  */
@@ -112,7 +93,10 @@ export async function getParticipantsByActivity(activity: TeamActivity) {
       memberships: {
         select: {
           activity: true,
-          team: { select: { name: true, code: true, leaderId: true } },
+          // axis/submission are only set on FABLAB teams — the hackathon export uses them.
+          team: {
+            select: { name: true, code: true, leaderId: true, axis: true, submissionUrl: true, submittedAt: true },
+          },
         },
       },
       room: { select: { id: true, status: true } },

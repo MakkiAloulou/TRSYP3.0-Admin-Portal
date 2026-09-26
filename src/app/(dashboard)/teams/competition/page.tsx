@@ -1,6 +1,6 @@
 import { getTeamsByActivity, getParticipantsByActivity } from '../team-data';
 import { TeamsGrid } from '../teams-grid';
-import { CompetitionExportButton } from './competition-export-button';
+import { TeamExportButton } from '../team-export-button';
 
 export default async function CompetitionTeamsPage() {
   const teams = await getTeamsByActivity('COMPETITION');
@@ -15,7 +15,7 @@ export default async function CompetitionTeamsPage() {
         </p>
       </div>
 
-      <CompetitionExportButton participants={participants} />
+      <TeamExportButton activity="COMPETITION" participants={participants} />
 
       <TeamsGrid teams={teams} />
     </div>
