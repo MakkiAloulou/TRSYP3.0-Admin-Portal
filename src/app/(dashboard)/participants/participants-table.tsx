@@ -24,7 +24,7 @@ type InternationalInfo = {
 };
 
 type Membership = {
-  activity: 'COMPETITION' | 'CHALLENGE';
+  activity: 'COMPETITION' | 'CHALLENGE' | 'FABLAB';
   team: { name: string; code: string; leaderId: string };
 };
 
@@ -56,7 +56,7 @@ export type ParticipantRow = {
   };
 };
 
-type ActivityFilter = 'ALL' | 'COMPETITION' | 'CHALLENGE' | 'NONE';
+type ActivityFilter = 'ALL' | 'COMPETITION' | 'CHALLENGE' | 'FABLAB' | 'NONE';
 
 type Filters = {
   query: string;
@@ -212,6 +212,7 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
               { value: 'ALL', label: 'Any activity' },
               { value: 'COMPETITION', label: 'Competition' },
               { value: 'CHALLENGE', label: 'Challenge' },
+              { value: 'FABLAB', label: 'Hackathon' },
               { value: 'NONE', label: 'No team' },
             ]}
           />
@@ -393,6 +394,7 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
             <Detail label="IEEE ID" value={p.ieeeId?.toString() ?? '—'} />
             <Detail label="Competition Team" value={teamLabel(p, 'COMPETITION')} />
             <Detail label="Challenge Team" value={teamLabel(p, 'CHALLENGE')} />
+            <Detail label="Hackathon Team" value={teamLabel(p, 'FABLAB')} />
             <Detail label="Room" value={p.room ? p.room.status : '—'} />
           </DetailGrid>
 

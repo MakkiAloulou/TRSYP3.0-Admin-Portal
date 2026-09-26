@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
+import type { FablabAxis } from '@prisma/client';
 import { generateRiddleCodes, type GeneratedRiddleCode } from './actions';
 
 type TeamMemberSummary = {
@@ -15,8 +16,17 @@ export type TeamRow = {
   code: string;
   size: number;
   leaderId: string;
+  /** FABLAB teams only — null everywhere else. */
+  axis: FablabAxis | null;
+  submissionUrl: string | null;
+  submittedAt: string | null;
   members: TeamMemberSummary[];
 };
+
+export const FABLAB_AXES: { value: FablabAxis; label: string }[] = [
+  { value: 'SAMPLE_PREPARATION', label: 'Automated Sample Preparation' },
+  { value: 'WEIGHING_DOSING', label: 'Automated Weighing & Dosing Station' },
+];
 
 /** riddleNumber -> code, per team id */
 export type ExistingCodesMap = Record<string, Record<number, string>>;
@@ -24,15 +34,18 @@ export type ExistingCodesMap = Record<string, Record<number, string>>;
 /**
  * Renders one activity's teams. Riddle codes belong to the challenge only, so
  * the selection toolbar and per-team code rows are opt-in via `showRiddleCodes`.
+ * Likewise the hackathon's axis and concept submission via `showFablab`.
  */
 export function TeamsGrid({
   teams,
   existingCodes = {},
   showRiddleCodes = false,
+  showFablab = false,
 }: {
   teams: TeamRow[];
   existingCodes?: ExistingCodesMap;
   showRiddleCodes?: boolean;
+  showFablab?: boolean;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [codesByTeam, setCodesByTeam] = useState<ExistingCodesMap>(existingCodes);
@@ -181,6 +194,8 @@ export function TeamsGrid({
                 ))}
               </div>
 
+              {showFablab && <FablabDetails team={team} />}
+
               {hasCodes && (
                 <div className="mt-4 space-y-1.5 border-t pt-4" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
                   {[1, 2, 3].map((n) => (
@@ -196,6 +211,50 @@ export function TeamsGrid({
       {results && <ResultsModal results={results} onClose={() => setResults(null)} />}
     </>
   );
+}
+
+function FablabDetails({ team }: { team: TeamRow }) {
+  const axisIndex = FABLAB_AXES.findIndex((a) => a.value === team.axis);
+
+  return (
+    <div className="mt-4 space-y-1.5 border-t pt-4 text-xs" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
+      <div className="flex items-center justify-between gap-3">
+        <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          Axis
+        </span>
+        {axisIndex >= 0 ? (
+          <span className="truncate text-white/80" title={FABLAB_AXES[axisIndex].label}>
+            {axisIndex + 1} · {FABLAB_AXES[axisIndex].label}
+          </span>
+        ) : (
+          <span style={{ color: 'rgba(255,255,255,0.25)' }}>Not chosen</span>
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>
+          Submission
+        </span>
+        {team.submissionUrl ? (
+          <a
+            href={team.submissionUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="truncate hover:underline"
+            style={{ color: 'var(--color-green)' }}
+            title={team.submissionUrl}
+          >
+            Drive folder{team.submittedAt ? ` · ${formatSubmitted(team.submittedAt)}` : ''}
+          </a>
+        ) : (
+          <span style={{ color: 'rgba(255,255,255,0.25)' }}>Not submitted</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function formatSubmitted(iso: string) {
+  return new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
 function CodeRow({ riddleNumber, code }: { riddleNumber: number; code?: string }) {

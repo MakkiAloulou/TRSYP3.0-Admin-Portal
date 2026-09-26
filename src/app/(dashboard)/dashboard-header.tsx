@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { href: '/payments', label: 'Payments' },
   { href: '/teams/competition', label: 'Competition' },
   { href: '/teams/challenge', label: 'Challenge' },
+  { href: '/teams/hackathon', label: 'Hackathon' },
 ] as const;
 
 export function DashboardHeader({ adminName }: { adminName: string }) {

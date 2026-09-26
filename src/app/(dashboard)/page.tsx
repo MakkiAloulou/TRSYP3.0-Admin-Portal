@@ -68,6 +68,7 @@ export default async function DashboardPage() {
 
   const competitionTeams = teams.filter((t) => t.activity === 'COMPETITION');
   const challengeTeams = teams.filter((t) => t.activity === 'CHALLENGE');
+  const hackathonTeams = teams.filter((t) => t.activity === 'FABLAB');
   const fullTeams = teams.filter((t) => t._count.memberships >= t.size).length;
 
   const confirmedRooms = rooms.filter((r) => r.status === 'Confirmed').length;
@@ -106,6 +107,11 @@ export default async function DashboardPage() {
           label="Challenge teams"
           value={challengeTeams.length}
           sub={`${sharePct(challengeTeams.length, teams.length)} of all teams`}
+        />
+        <StatTile
+          label="Hackathon teams"
+          value={hackathonTeams.length}
+          sub={`${sharePct(hackathonTeams.length, teams.length)} of all teams`}
         />
       </div>
 

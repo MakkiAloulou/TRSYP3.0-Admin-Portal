@@ -25,6 +25,9 @@ const COLUMNS: { header: string; value: (p: ParticipantRow) => string }[] = [
   { header: 'Challenge team', value: (p) => team(p, 'CHALLENGE')?.name ?? '' },
   { header: 'Challenge team code', value: (p) => team(p, 'CHALLENGE')?.code ?? '' },
   { header: 'Challenge role', value: (p) => role(p, 'CHALLENGE') },
+  { header: 'Hackathon team', value: (p) => team(p, 'FABLAB')?.name ?? '' },
+  { header: 'Hackathon team code', value: (p) => team(p, 'FABLAB')?.code ?? '' },
+  { header: 'Hackathon role', value: (p) => role(p, 'FABLAB') },
   { header: 'Room group', value: (p) => (p.room ? p.room.id.slice(0, 8) : '') },
   { header: 'Room status', value: (p) => p.room?.status ?? '' },
   { header: 'Registered at', value: (p) => dateTime(p.user.createdAt) },
@@ -70,11 +73,11 @@ export function participantsCsvFilename(now = new Date()) {
 
 /* ── cell helpers ───────────────────────────────────────── */
 
-function team(p: ParticipantRow, activity: 'COMPETITION' | 'CHALLENGE') {
+function team(p: ParticipantRow, activity: 'COMPETITION' | 'CHALLENGE' | 'FABLAB') {
   return p.memberships.find((m) => m.activity === activity)?.team ?? null;
 }
 
-function role(p: ParticipantRow, activity: 'COMPETITION' | 'CHALLENGE') {
+function role(p: ParticipantRow, activity: 'COMPETITION' | 'CHALLENGE' | 'FABLAB') {
   const found = team(p, activity);
   if (!found) return '';
   return found.leaderId === p.id ? 'Leader' : 'Member';

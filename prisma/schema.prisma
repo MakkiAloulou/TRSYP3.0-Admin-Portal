@@ -108,6 +108,9 @@ model Team {
   name      String
   size      Int // max capacity — enforced at service level
   activity  TeamActivity @default(COMPETITION) // which event this team competes in
+  axis          FablabAxis? // FABLAB teams only — the axis the leader chose
+  submissionUrl String?     @map("submission_url") // FABLAB only — Google Drive folder of the concept dossier
+  submittedAt   DateTime?   @map("submitted_at") // when submissionUrl was last set
   leaderId  String       @map("leader_id")
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
@@ -189,6 +192,13 @@ model VisaApplication {
 enum TeamActivity {
   COMPETITION
   CHALLENGE
+  FABLAB // Adwya × Orange Fablab Challenge (Track 03)
+}
+
+/// Fablab Challenge axis, picked by the team leader. Null on non-FABLAB teams.
+enum FablabAxis {
+  SAMPLE_PREPARATION // Axis 1: Automated Sample Preparation
+  WEIGHING_DOSING // Axis 2: Automated Weighing & Dosing Station
 }
 
 enum ParticipantType {

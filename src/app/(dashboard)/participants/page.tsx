@@ -28,7 +28,7 @@ export default async function ParticipantsPage() {
         participantType: true,
         sb: true,
         country: true,
-        // One membership per activity (DB-enforced), so this is at most 2 rows.
+        // One membership per activity (DB-enforced), so this is at most 3 rows.
         memberships: {
           select: {
             activity: true,

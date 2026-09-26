@@ -6,7 +6,7 @@ import type { ExistingCodesMap, TeamRow } from './teams-grid';
 /**
  * Loads every team for one activity, flattening `memberships` into the plain
  * member list the grid renders. Teams are scoped by `Team.activity`, so the
- * competition and challenge pages never see each other's rows.
+ * competition, challenge and hackathon pages never see each other's rows.
  */
 export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRow[]> {
   const teams = await prisma.team.findMany({
@@ -18,6 +18,9 @@ export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRo
       code: true,
       size: true,
       leaderId: true,
+      axis: true,
+      submissionUrl: true,
+      submittedAt: true,
       leader: {
         select: {
           id: true,
@@ -53,6 +56,9 @@ export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRo
       code: team.code,
       size: team.size,
       leaderId: team.leaderId,
+      axis: team.axis,
+      submissionUrl: team.submissionUrl,
+      submittedAt: team.submittedAt?.toISOString() ?? null,
       members,
     };
   });
@@ -78,7 +84,7 @@ export async function getRiddleCodes(teamIds: string[]): Promise<ExistingCodesMa
 }
 
 /**
- * Loads all participants who are registered in a specific activity (COMPETITION or CHALLENGE),
+ * Loads all participants who are registered in a specific activity (COMPETITION, CHALLENGE or FABLAB),
  * including their team membership information.
  */
 export async function getParticipantsByActivity(activity: TeamActivity) {
@@ -102,7 +108,7 @@ export async function getParticipantsByActivity(activity: TeamActivity) {
       participantType: true,
       sb: true,
       country: true,
-      // One membership per activity (DB-enforced), so this is at most 2 rows.
+      // One membership per activity (DB-enforced), so this is at most 3 rows.
       memberships: {
         select: {
           activity: true,
