@@ -110,6 +110,115 @@ export function ShareBar({ slices }: { slices: Slice[] }) {
   );
 }
 
+/* ── Part-to-whole with a headline: donut + legend ──────── */
+
+const DONUT_SIZE = 200;
+const DONUT_STROKE = 28;
+const DONUT_RADIUS = (DONUT_SIZE - DONUT_STROKE) / 2 - 4; // 4px leaves room for the hover swell
+const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
+/** Surface-coloured gap between segments, in px along the ring. */
+const DONUT_GAP = 2;
+
+/**
+ * A ring of slices with the headline in the middle, beside a legend that
+ * doubles as the table view (label, count, share).
+ *
+ * Hover is the tooltip: pointing at a slice or its legend row swaps the centre
+ * to that slice's count and share and dims the rest — no floating box to
+ * collide with the legend. Slices are drawn in the caller's order, which is
+ * what the palette's adjacent-pair validation was run against.
+ */
+export function DonutBreakdown({
+  items,
+  centerValue,
+  centerLabel,
+  emptyLabel,
+}: {
+  items: Slice[];
+  centerValue: string;
+  centerLabel: string;
+  emptyLabel?: string;
+}) {
+  const [hovered, setHovered] = useState<string | null>(null);
+
+  const total = items.reduce((sum, i) => sum + i.value, 0);
+  if (total === 0) return <EmptyState>{emptyLabel}</EmptyState>;
+
+  const shown = items.filter((i) => i.value > 0);
+  const gap = shown.length > 1 ? DONUT_GAP : 0;
+  const active = shown.find((i) => i.label === hovered) ?? null;
+
+  const lengths = shown.map((item) => (item.value / total) * DONUT_CIRCUMFERENCE);
+  const segments = shown.map((item, i) => ({
+    item,
+    color: item.color ?? VIZ[i % VIZ.length],
+    // Trim the gap off the end of each slice; a sliver smaller than the gap
+    // still gets a visible 1px so it is never silently dropped.
+    dash: Math.max(lengths[i] - gap, 1),
+    // Where this slice starts along the ring: the sum of every slice before it.
+    offset: lengths.slice(0, i).reduce((sum, length) => sum + length, 0),
+  }));
+
+  return (
+    <div className="viz-donut">
+      <div className="viz-donut-figure" onMouseLeave={() => setHovered(null)}>
+        <svg
+          viewBox={`0 0 ${DONUT_SIZE} ${DONUT_SIZE}`}
+          className="viz-donut-svg"
+          role="img"
+          aria-label={shown.map((s) => `${s.label}: ${s.value}`).join(', ')}
+        >
+          <g transform={`rotate(-90 ${DONUT_SIZE / 2} ${DONUT_SIZE / 2})`}>
+            {segments.map(({ item, color, dash, offset: start }) => (
+              <circle
+                key={item.label}
+                cx={DONUT_SIZE / 2}
+                cy={DONUT_SIZE / 2}
+                r={DONUT_RADIUS}
+                fill="none"
+                stroke={color}
+                strokeWidth={active?.label === item.label ? DONUT_STROKE + 6 : DONUT_STROKE}
+                strokeDasharray={`${dash} ${DONUT_CIRCUMFERENCE - dash}`}
+                strokeDashoffset={-start}
+                className="viz-donut-seg"
+                style={{ opacity: active && active.label !== item.label ? 0.3 : 1 }}
+                onMouseEnter={() => setHovered(item.label)}
+              >
+                <title>{`${item.label}: ${item.value} (${pct(item.value, total)})`}</title>
+              </circle>
+            ))}
+          </g>
+        </svg>
+
+        <div className="viz-donut-center" aria-hidden>
+          <span className="viz-donut-value">{active ? active.value : centerValue}</span>
+          <span className="viz-donut-label">
+            {active ? `${active.label} · ${pct(active.value, total)}` : centerLabel}
+          </span>
+        </div>
+      </div>
+
+      <ul className="viz-donut-legend">
+        {shown.map((item, i) => (
+          <li
+            key={item.label}
+            className={`viz-donut-row${active?.label === item.label ? ' is-active' : ''}`}
+            onMouseEnter={() => setHovered(item.label)}
+            onMouseLeave={() => setHovered(null)}
+          >
+            <span className="viz-swatch" style={{ background: item.color ?? VIZ[i % VIZ.length] }} />
+            <span className="viz-legend-label">{item.label}</span>
+            <span className="viz-legend-value">
+              {item.value}
+              <span className="viz-legend-pct">{pct(item.value, total)}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 /* ── Magnitude: ranked horizontal bars ──────────────────── */
 
 export function RankedBars({
@@ -342,9 +451,15 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
 
 /* ── Status list (visa pipeline) ────────────────────────── */
 
-export function StatusList({ items }: { items: Slice[] }) {
+export function StatusList({
+  items,
+  emptyLabel = 'No visa applications yet',
+}: {
+  items: Slice[];
+  emptyLabel?: string;
+}) {
   const total = items.reduce((s, i) => s + i.value, 0);
-  if (total === 0) return <EmptyState>No visa applications yet</EmptyState>;
+  if (total === 0) return <EmptyState>{emptyLabel}</EmptyState>;
 
   return (
     <ul className="viz-status-list">

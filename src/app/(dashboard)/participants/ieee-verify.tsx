@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { verifyParticipants, type VerifyResult } from './actions';
 import {
   IEEE_CHECK_BADGES,
+  IEEE_CHECK_COLORS,
   IEEE_CHECK_LABELS,
   deriveIeeeState,
   displayStatus,
@@ -12,7 +13,6 @@ import {
   isRasSociety,
   isYpSociety,
   type IeeeCheckState,
-  type IeeeCheckStatus,
   type IeeeVerification,
 } from '@/lib/ieee-verification';
 import type { ParticipantRow } from './participants-table';
@@ -22,23 +22,25 @@ import type { ParticipantRow } from './participants-table';
  *  rather than in long silent jumps. */
 const BATCH_SIZE = 5;
 
-export const IEEE_CHECK_COLORS: Record<IeeeCheckState, string> = {
-  VERIFIED: '#00e87a',
-  MISMATCH: '#f59e0b',
-  NOT_RAS: '#a78bfa',
-  INACTIVE: '#ef4444',
-  NOT_FOUND: '#ef4444',
-  UNVERIFIED: 'rgba(255,255,255,0.4)',
-  NOT_APPLICABLE: 'rgba(255,255,255,0.25)',
-};
-
-const FAILED_COLOR = '#ff1d78';
-const CHECKING_COLOR = 'var(--viz-3)';
+// Pink belongs to Not YP, so a failed lookup is blue, and the transient
+// "Checking…" is plain white — its pulse is what sets it apart.
+const FAILED_COLOR = 'var(--viz-3)';
+const CHECKING_COLOR = 'rgba(255,255,255,0.8)';
 
 /** A run's tally: each verdict as the row shows it, plus lookups that never
  *  reached one (IEEE down, timeout) and so stored nothing. */
-export type RunOutcome = IeeeCheckStatus | 'NOT_RAS' | 'FAILED';
-const RUN_OUTCOMES: RunOutcome[] = ['VERIFIED', 'MISMATCH', 'NOT_RAS', 'INACTIVE', 'NOT_FOUND', 'FAILED'];
+export type RunOutcome = Exclude<IeeeCheckState, 'UNVERIFIED' | 'NOT_APPLICABLE'> | 'FAILED';
+const RUN_OUTCOMES: RunOutcome[] = [
+  'VERIFIED',
+  'MISMATCH',
+  'NOT_RAS',
+  'NOT_YP',
+  'APPLICANT',
+  'NOT_MEMBER',
+  'LAPSED',
+  'NOT_FOUND',
+  'FAILED',
+];
 
 const OUTCOME_LABELS: Record<RunOutcome, string> = { ...IEEE_CHECK_LABELS, FAILED: 'Failed' };
 const OUTCOME_COLORS: Record<RunOutcome, string> = { ...IEEE_CHECK_COLORS, FAILED: FAILED_COLOR };

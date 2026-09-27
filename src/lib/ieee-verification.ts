@@ -5,17 +5,34 @@
 export const IEEE_CHECK_STATUSES = ['VERIFIED', 'MISMATCH', 'INACTIVE', 'NOT_FOUND'] as const;
 export type IeeeCheckStatus = (typeof IEEE_CHECK_STATUSES)[number];
 
-/** What a row shows. The stored statuses, NOT_RAS (a MISMATCH whose only
- *  problem is RAS, named for what it is), and the states that have no row:
- *  never checked (or changed since), and NonIEEE participants, who claim no
- *  membership and so are never sent to IEEE at all. */
-export type IeeeCheckState = IeeeCheckStatus | 'NOT_RAS' | 'UNVERIFIED' | 'NOT_APPLICABLE';
+/**
+ * What a row shows — the stored status, made specific where the stored one is
+ * too coarse to act on:
+ * - MISMATCH whose only problem is RAS or YP → NOT_RAS / NOT_YP
+ * - INACTIVE, by IEEE's own status → NOT_MEMBER (an IEEE account, never a
+ *   membership), APPLICANT (application started, not completed) or LAPSED
+ *   (was a member: arrears, expired)
+ * plus the states with no stored result: never checked (or changed since), and
+ * NonIEEE participants, who claim no membership and are never sent to IEEE.
+ */
+export type IeeeCheckState =
+  | Exclude<IeeeCheckStatus, 'INACTIVE'>
+  | 'NOT_RAS'
+  | 'NOT_YP'
+  | 'NOT_MEMBER'
+  | 'APPLICANT'
+  | 'LAPSED'
+  | 'UNVERIFIED'
+  | 'NOT_APPLICABLE';
 
 export const IEEE_CHECK_LABELS: Record<IeeeCheckState, string> = {
   VERIFIED: 'Verified',
   MISMATCH: 'Mismatch',
   NOT_RAS: 'Not RAS',
-  INACTIVE: 'Inactive',
+  NOT_YP: 'Not YP',
+  NOT_MEMBER: 'Not a member',
+  APPLICANT: 'Pending application',
+  LAPSED: 'Lapsed',
   NOT_FOUND: 'Not found',
   UNVERIFIED: 'Unverified',
   NOT_APPLICABLE: 'Not needed',
@@ -25,10 +42,28 @@ export const IEEE_CHECK_BADGES: Record<IeeeCheckState, string> = {
   VERIFIED: 'admin-badge--green',
   MISMATCH: 'admin-badge--amber',
   NOT_RAS: 'admin-badge--violet',
-  INACTIVE: 'admin-badge--red',
-  NOT_FOUND: 'admin-badge--red',
+  NOT_YP: 'admin-badge--pink',
+  NOT_MEMBER: 'admin-badge--orange',
+  APPLICANT: 'admin-badge--lime',
+  LAPSED: 'admin-badge--red',
+  NOT_FOUND: 'admin-badge--cyan',
   UNVERIFIED: 'admin-badge--gray',
   NOT_APPLICABLE: 'admin-badge--gray',
+};
+
+/** Row and chart colour per verdict. Every actionable verdict has its own hue,
+ *  so a glance at a column or a chart says which problem it is. */
+export const IEEE_CHECK_COLORS: Record<IeeeCheckState, string> = {
+  VERIFIED: '#00e87a',
+  MISMATCH: '#f59e0b',
+  NOT_RAS: '#a78bfa',
+  NOT_YP: '#ff1d78',
+  NOT_MEMBER: '#f97316',
+  APPLICANT: '#a3e635',
+  LAPSED: '#ef4444',
+  NOT_FOUND: '#22d3ee',
+  UNVERIFIED: 'rgba(255,255,255,0.4)',
+  NOT_APPLICABLE: 'rgba(255,255,255,0.25)',
 };
 
 /** A `mismatch` issue changes the status; a `warning` is shown but leaves a
@@ -37,7 +72,7 @@ export type IeeeIssue = {
   level: 'mismatch' | 'warning';
   text: string;
   /** Set on the issues the UI needs to recognise, not just display. */
-  code?: 'NOT_RAS';
+  code?: 'NOT_RAS' | 'NOT_YP';
 };
 
 /** One stored check, as the client receives it (dates already ISO strings). */
@@ -149,10 +184,12 @@ export function assessMember(
   }
 
   if (record.memberStatus.toLowerCase() !== 'active') {
-    issues.push({
-      level: 'mismatch',
-      text: `IEEE membership status is "${record.memberStatus}" (grade "${record.grade}"), not Active.`,
-    });
+    const text = {
+      NOT_MEMBER: `Has an IEEE account but no membership (IEEE status "${record.memberStatus}", grade "${record.grade}").`,
+      APPLICANT: `Has applied for IEEE membership, but the application is not complete (IEEE status "${record.memberStatus}"). Usually awaiting payment.`,
+      LAPSED: `Membership is no longer active (IEEE status "${record.memberStatus}", grade "${record.grade}"). They need to renew.`,
+    }[inactiveKind(record.memberStatus)];
+    issues.push({ level: 'mismatch', text });
     return { status: 'INACTIVE', issues };
   }
 
@@ -165,16 +202,20 @@ export function assessMember(
     });
   }
 
+  // One issue whichever way it fails, so "the only problem is YP" stays a
+  // single mismatch that displayStatus can name.
   if (claim.participantType === 'YoungProfessional') {
     if (isStudentGrade) {
       issues.push({
         level: 'mismatch',
+        code: 'NOT_YP',
         text: `Registered as Young Professional, but IEEE grade is "${record.grade}".`,
       });
     } else if (!record.societies.some(isYpSociety)) {
       issues.push({
-        level: 'warning',
-        text: 'Active member, but Young Professionals is not in their society list.',
+        level: 'mismatch',
+        code: 'NOT_YP',
+        text: 'Registered as Young Professional, but Young Professionals (MEMYP060) is not among their active societies.',
       });
     }
   }
@@ -220,7 +261,10 @@ export type IeeeStateInput = {
   ieeeId: number | null;
   isRas: boolean;
   user: { email: string };
-  ieeeVerification: IeeeVerification | null;
+  ieeeVerification: Pick<
+    IeeeVerification,
+    'status' | 'issues' | 'memberStatus' | 'claimedIeeeId' | 'claimedType' | 'claimedIsRas' | 'claimedEmail'
+  > | null;
 };
 
 /**
@@ -243,12 +287,28 @@ export function deriveIeeeState(p: IeeeStateInput): IeeeCheckState {
   return stale ? 'UNVERIFIED' : displayStatus(v);
 }
 
-/** The stored status as a row shows it: a mismatch whose only problem is RAS
- *  reads as "Not RAS", so the admin knows the fix without opening it. */
-export function displayStatus(v: Pick<IeeeVerification, 'status' | 'issues'>): IeeeCheckState {
+/** The stored status as a row shows it, so the admin knows the fix without
+ *  opening it. A mismatch whose only problem is RAS or YP reads as "Not RAS" /
+ *  "Not YP"; anything else wrong alongside it stays a plain mismatch. */
+export function displayStatus(v: Pick<IeeeVerification, 'status' | 'issues' | 'memberStatus'>): IeeeCheckState {
+  if (v.status === 'INACTIVE') return inactiveKind(v.memberStatus ?? '');
   if (v.status !== 'MISMATCH') return v.status;
   const mismatches = v.issues.filter((issue) => issue.level === 'mismatch');
-  return mismatches.length === 1 && mismatches[0].code === 'NOT_RAS' ? 'NOT_RAS' : 'MISMATCH';
+  return (mismatches.length === 1 && mismatches[0].code) || 'MISMATCH';
+}
+
+/**
+ * Sorts IEEE's non-active statuses by what the admin does about them. Seen in
+ * practice: "Not Applicable" and "Applicant" (both grade "Individual"),
+ * "Arrears" and "Inactive". Anything unrecognised is treated as lapsed — the
+ * only one of the three that says they once held a membership, so the one
+ * that never understates a problem.
+ */
+function inactiveKind(memberStatus: string): 'NOT_MEMBER' | 'APPLICANT' | 'LAPSED' {
+  const status = memberStatus.trim().toLowerCase();
+  if (status === 'not applicable') return 'NOT_MEMBER';
+  if (status === 'applicant') return 'APPLICANT';
+  return 'LAPSED';
 }
 
 /** Whether the stored result exists but no longer applies — shown as a note so

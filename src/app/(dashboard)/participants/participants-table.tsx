@@ -138,7 +138,15 @@ function matchesIeee(p: ParticipantRow, filter: IeeeFilter, failures: Record<str
   const state = deriveIeeeState(p);
   switch (filter) {
     case 'NEEDS_ACTION':
-      return state === 'MISMATCH' || state === 'NOT_RAS' || state === 'INACTIVE' || state === 'NOT_FOUND';
+      return (
+        state === 'MISMATCH' ||
+        state === 'NOT_RAS' ||
+        state === 'NOT_YP' ||
+        state === 'NOT_MEMBER' ||
+        state === 'APPLICANT' ||
+        state === 'LAPSED' ||
+        state === 'NOT_FOUND'
+      );
     case 'NOTES':
       return state === 'VERIFIED' && (p.ieeeVerification?.issues.length ?? 0) > 0;
     case 'FAILED':
@@ -285,7 +293,10 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
               { value: 'NOTES', label: 'Verified with notes' },
               { value: 'MISMATCH', label: 'Mismatch' },
               { value: 'NOT_RAS', label: 'Not RAS' },
-              { value: 'INACTIVE', label: 'Inactive' },
+              { value: 'NOT_YP', label: 'Not YP' },
+              { value: 'APPLICANT', label: 'Pending application' },
+              { value: 'NOT_MEMBER', label: 'Not a member' },
+              { value: 'LAPSED', label: 'Lapsed' },
               { value: 'NOT_FOUND', label: 'Not found' },
               { value: 'UNVERIFIED', label: 'Unverified' },
               { value: 'FAILED', label: 'Check failed' },

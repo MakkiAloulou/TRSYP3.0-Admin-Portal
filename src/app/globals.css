@@ -166,6 +166,28 @@ button {
   border-color: rgba(167, 139, 250, 0.3);
 }
 
+/* IEEE "Not a member": an IEEE account that never held a membership. */
+.admin-badge--orange {
+  color: #f97316;
+  background: rgba(249, 115, 22, 0.08);
+  border-color: rgba(249, 115, 22, 0.3);
+}
+
+/* IEEE "Pending application": applied, not yet complete. */
+.admin-badge--lime {
+  color: #a3e635;
+  background: rgba(163, 230, 53, 0.08);
+  border-color: rgba(163, 230, 53, 0.3);
+}
+
+/* IEEE "Not found": apart from Lapsed's red — no record at all is a
+   different problem from a lapsed one. */
+.admin-badge--cyan {
+  color: #22d3ee;
+  background: rgba(34, 211, 238, 0.08);
+  border-color: rgba(34, 211, 238, 0.3);
+}
+
 /* Distinct from --pink: rejected and never-submitted are different states and
    must not read as the same colour. */
 .admin-badge--red {
@@ -509,6 +531,104 @@ button {
 .viz-legend-pct {
   color: var(--viz-ink-faint);
   font-size: 12px;
+}
+
+/* Donut + legend. Side by side on a full-width card; the legend splits into
+   two columns there so nine rows don't tower over a 200px ring. */
+.viz-donut {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+@media (min-width: 720px) {
+  .viz-donut {
+    flex-direction: row;
+    align-items: center;
+    gap: 36px;
+  }
+}
+
+.viz-donut-figure {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  flex-shrink: 0;
+}
+
+.viz-donut-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.viz-donut-seg {
+  cursor: pointer;
+  transition: opacity 0.15s ease, stroke-width 0.15s ease;
+}
+
+.viz-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+  text-align: center;
+  padding: 0 44px;
+}
+
+.viz-donut-value {
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 600;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-donut-label {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--viz-ink-muted);
+}
+
+.viz-donut-legend {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px 28px;
+  width: 100%;
+  min-width: 0;
+}
+
+@media (min-width: 720px) {
+  .viz-donut-legend {
+    flex: 1;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.viz-donut-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: default;
+  transition: background 0.15s ease;
+}
+
+.viz-donut-row.is-active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viz-donut-seg {
+    transition: none;
+  }
 }
 
 /* Ranked horizontal bars */
@@ -1278,9 +1398,9 @@ button {
 }
 
 .ieee-issue--failed {
-  color: var(--color-pink);
-  background: rgba(255, 29, 120, 0.08);
-  border-color: rgba(255, 29, 120, 0.25);
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .ieee-issue--ok {

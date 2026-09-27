@@ -1,8 +1,15 @@
 import { prisma } from '@/lib/prisma';
-import { ChartCard, Meter, RankedBars, ShareBar, StatTile, StatusList, TrendChart, VIZ, type TrendPoint } from './charts';
+import { ChartCard, DonutBreakdown, RankedBars, ShareBar, StatTile, TrendChart, VIZ, type TrendPoint } from './charts';
 import { RegionMap } from './region-map';
 import { regionForBranch } from '@/lib/student-branch-region';
 import { REGION_NAMES } from '@/lib/tunisia-regions';
+import {
+  IEEE_CHECK_COLORS,
+  IEEE_CHECK_LABELS,
+  deriveIeeeState,
+  type IeeeCheckState,
+  type IeeeIssue,
+} from '@/lib/ieee-verification';
 
 /** Status palette — reserved for state, never reused as a series colour. */
 const STATUS = {
@@ -12,6 +19,32 @@ const STATUS = {
   critical: '#d03b3b',
 } as const;
 
+/** Slice order around the donut. Also the adjacency the dataviz validator was
+ *  run against: Not a member (orange) must not sit next to Lapsed (red) —
+ *  at ΔE 10.4 the pair is hard to tell apart even with full colour vision —
+ *  so Pending application separates them. Unchecked comes last, in grey. */
+const IEEE_ORDER: IeeeCheckState[] = [
+  'VERIFIED',
+  'MISMATCH',
+  'NOT_RAS',
+  'NOT_YP',
+  'NOT_MEMBER',
+  'APPLICANT',
+  'LAPSED',
+  'NOT_FOUND',
+  'UNVERIFIED',
+];
+
+const IEEE_NEEDS_ACTION = new Set<IeeeCheckState>([
+  'MISMATCH',
+  'NOT_RAS',
+  'NOT_YP',
+  'APPLICANT',
+  'NOT_MEMBER',
+  'LAPSED',
+  'NOT_FOUND',
+]);
+
 const VISA_ORDER = [
   { status: 'Pending', color: STATUS.warning },
   { status: 'LetterSent', label: 'Letter sent', color: STATUS.serious },
@@ -20,9 +53,11 @@ const VISA_ORDER = [
 ] as const;
 
 export default async function DashboardPage() {
-  const [participants, teams, visaApplications, rooms] = await Promise.all([
+  const [participants, teams, visaApplications] = await Promise.all([
     prisma.participant.findMany({
       select: {
+        ieeeId: true,
+        isRas: true,
         participantType: true,
         gender: true,
         paid: true,
@@ -30,27 +65,36 @@ export default async function DashboardPage() {
         banned: true,
         sb: true,
         createdAt: true,
-        user: { select: { active: true } },
+        user: { select: { active: true, email: true } },
+        // Just what deriveIeeeState needs to tell a current result from a stale one.
+        ieeeVerification: {
+          select: {
+            status: true,
+            issues: true,
+            memberStatus: true,
+            claimedIeeeId: true,
+            claimedType: true,
+            claimedIsRas: true,
+            claimedEmail: true,
+          },
+        },
       },
     }),
     prisma.team.findMany({
       select: { activity: true, size: true, _count: { select: { memberships: true } } },
     }),
     prisma.visaApplication.findMany({ select: { status: true } }),
-    prisma.room.findMany({ select: { status: true } }),
   ]);
 
   const total = participants.length;
   const paid = participants.filter((p) => p.paid).length;
   const international = participants.filter((p) => p.isInternational).length;
-  const banned = participants.filter((p) => p.banned).length;
   const unverified = participants.filter((p) => !p.user.active).length;
 
   // "IEEE" == holds a membership grade; NonIEEE is the only non-member type.
   const nonIeee = participants.filter((p) => p.participantType === 'NonIEEE').length;
   const ieee = total - nonIeee;
 
-  const byType = countBy(participants, (p) => p.participantType);
   const byGender = countBy(participants, (p) => normaliseGender(p.gender));
   const bySb = countBy(
     participants.filter((p) => p.sb),
@@ -71,7 +115,28 @@ export default async function DashboardPage() {
   const hackathonTeams = teams.filter((t) => t.activity === 'FABLAB');
   const fullTeams = teams.filter((t) => t._count.memberships >= t.size).length;
 
-  const confirmedRooms = rooms.filter((r) => r.status === 'Confirmed').length;
+  // NonIEEE participants claim no membership, so they are outside the check.
+  const ieeeStates = participants
+    .map((p) =>
+      deriveIeeeState({
+        ...p,
+        ieeeVerification: p.ieeeVerification && {
+          ...p.ieeeVerification,
+          issues: p.ieeeVerification.issues as IeeeIssue[],
+        },
+      }),
+    )
+    .filter((state) => state !== 'NOT_APPLICABLE');
+
+  const ieeeItems = IEEE_ORDER.map((state) => ({
+    label: IEEE_CHECK_LABELS[state],
+    value: ieeeStates.filter((s) => s === state).length,
+    color: IEEE_CHECK_COLORS[state],
+  })).filter((item) => item.value > 0);
+
+  const ieeeVerified = ieeeStates.filter((s) => s === 'VERIFIED').length;
+  const ieeeUnchecked = ieeeStates.filter((s) => s === 'UNVERIFIED').length;
+  const ieeeNeedsAction = ieeeStates.filter((s) => IEEE_NEEDS_ACTION.has(s)).length;
 
   const visaItems = VISA_ORDER.map((v) => ({
     label: 'label' in v ? v.label : v.status,
@@ -119,6 +184,22 @@ export default async function DashboardPage() {
         <TrendChart points={trend} />
       </ChartCard>
 
+      <ChartCard
+        title="IEEE verification"
+        subtitle={`Membership checks for ${ieeeStates.length} IEEE participants`}
+      >
+        <DonutBreakdown
+          items={ieeeItems}
+          centerValue={sharePct(ieeeVerified, ieeeStates.length)}
+          centerLabel={`verified (${ieeeVerified} of ${ieeeStates.length})`}
+          emptyLabel="No IEEE participants yet"
+        />
+        <div className="viz-footnote">
+          <span>{ieeeNeedsAction} need action</span>
+          <span>{ieeeUnchecked} not checked yet</span>
+        </div>
+      </ChartCard>
+
       <div className="viz-grid">
         <ChartCard title="Top student branches" subtitle="Ten largest delegations">
           <RankedBars items={topN(bySb, 10)} emptyLabel="No student branch recorded yet" />
@@ -147,20 +228,7 @@ export default async function DashboardPage() {
           />
         </ChartCard>
 
-        <ChartCard title="Membership type" subtitle="Registrations by participant type">
-          <RankedBars items={byType} />
-        </ChartCard>
 
-        <ChartCard title="Payment" subtitle="Confirmed payments against total registrations">
-          <Meter value={paid} total={total} caption="of participants have paid" />
-          <div className="viz-footnote">
-            <span>{total - paid} unpaid</span>
-            <span>{banned} banned</span>
-            <span>
-              {confirmedRooms}/{rooms.length} rooms confirmed
-            </span>
-          </div>
-        </ChartCard>
       </div>
     </div>
   );
