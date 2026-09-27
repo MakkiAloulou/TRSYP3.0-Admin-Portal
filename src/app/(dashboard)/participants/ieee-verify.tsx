@@ -8,10 +8,9 @@ import {
   IEEE_CHECK_COLORS,
   IEEE_CHECK_LABELS,
   deriveIeeeState,
-  displayStatus,
+  evaluateIeee,
   isIeeeResultStale,
   isRasSociety,
-  isYpSociety,
   type IeeeCheckState,
   type IeeeVerification,
 } from '@/lib/ieee-verification';
@@ -22,7 +21,7 @@ import type { ParticipantRow } from './participants-table';
  *  rather than in long silent jumps. */
 const BATCH_SIZE = 5;
 
-// Pink belongs to Not YP, so a failed lookup is blue, and the transient
+// A failed lookup is blue, apart from every verdict colour; the transient
 // "Checking…" is plain white — its pulse is what sets it apart.
 const FAILED_COLOR = 'var(--viz-3)';
 const CHECKING_COLOR = 'rgba(255,255,255,0.8)';
@@ -30,17 +29,7 @@ const CHECKING_COLOR = 'rgba(255,255,255,0.8)';
 /** A run's tally: each verdict as the row shows it, plus lookups that never
  *  reached one (IEEE down, timeout) and so stored nothing. */
 export type RunOutcome = Exclude<IeeeCheckState, 'UNVERIFIED' | 'NOT_APPLICABLE'> | 'FAILED';
-const RUN_OUTCOMES: RunOutcome[] = [
-  'VERIFIED',
-  'MISMATCH',
-  'NOT_RAS',
-  'NOT_YP',
-  'APPLICANT',
-  'NOT_MEMBER',
-  'LAPSED',
-  'NOT_FOUND',
-  'FAILED',
-];
+const RUN_OUTCOMES: RunOutcome[] = ['VERIFIED', 'NOT_RAS', 'NOT_IEEE', 'FAILED'];
 
 const OUTCOME_LABELS: Record<RunOutcome, string> = { ...IEEE_CHECK_LABELS, FAILED: 'Failed' };
 const OUTCOME_COLORS: Record<RunOutcome, string> = { ...IEEE_CHECK_COLORS, FAILED: FAILED_COLOR };
@@ -116,7 +105,7 @@ export function useIeeeVerification(participants: ParticipantRow[]) {
       for (const outcome of result.outcomes) {
         if (outcome.ok) {
           fresh[outcome.participantId] = outcome.verification;
-          outcomes.push(displayStatus(outcome.verification) as RunOutcome);
+          outcomes.push(outcome.state as RunOutcome);
         } else {
           failed[outcome.participantId] = outcome.message;
           outcomes.push('FAILED');
@@ -379,9 +368,11 @@ export function IeeeSection({
   busy: boolean;
   onRecheck: () => void;
 }) {
-  const state = deriveIeeeState(p);
+  // Judged under the current rules, so the notes here always match the verdict.
+  const { state, issues } = evaluateIeee(p);
   const v = p.ieeeVerification;
   const checking = activity !== undefined;
+  const current = state !== 'UNVERIFIED';
 
   return (
     <div>
@@ -436,21 +427,28 @@ export function IeeeSection({
             </div>
           )}
 
-          {v?.issues.map((issue, i) => (
+          {issues.map((issue, i) => (
             <div key={i} className={`ieee-issue ieee-issue--${issue.level}`}>
               <span aria-hidden>{issue.level === 'mismatch' ? '✕' : '!'}</span>
               <span>{issue.text}</span>
             </div>
           ))}
 
-          {v?.status === 'VERIFIED' && v.issues.length === 0 && (
+          {state === 'VERIFIED' && issues.length === 0 && (
             <div className="ieee-issue ieee-issue--ok">
               <span aria-hidden>✓</span>
-              <span>Active IEEE member; grade, societies and name initials match what they registered.</span>
+              <span>Active IEEE member; RAS and name initials match what they registered.</span>
             </div>
           )}
 
-          {v && v.memberStatus !== null && (
+          {current && v && v.memberStatus === null && (
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+              <IeeeDetail label="IEEE record" value="None found for their IEEE ID or email" />
+              <IeeeDetail label="Registered as" value={`${p.participantType}${p.isRas ? ' · RAS' : ''}`} />
+            </div>
+          )}
+
+          {current && v && v.memberStatus !== null && (
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
               <IeeeDetail label="IEEE status" value={v.memberStatus} />
               <IeeeDetail label="Grade" value={v.grade || '—'} />
@@ -470,11 +468,10 @@ export function IeeeSection({
                     {v.societies.map((code) => (
                       <span
                         key={code}
-                        className={`ieee-society${isRasSociety(code) || isYpSociety(code) ? ' ieee-society--key' : ''}`}
+                        className={`ieee-society${isRasSociety(code) ? ' ieee-society--key' : ''}`}
                       >
                         {code}
                         {isRasSociety(code) && ' · RAS'}
-                        {isYpSociety(code) && ' · YP'}
                       </span>
                     ))}
                   </div>

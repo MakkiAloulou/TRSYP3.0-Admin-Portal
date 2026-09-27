@@ -120,8 +120,9 @@ const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
 const DONUT_GAP = 2;
 
 /**
- * A ring of slices with the headline in the middle, beside a legend that
- * doubles as the table view (label, count, share).
+ * A ring of slices with the headline in the middle, beside a legend of tiles
+ * (label, count, share) that doubles as the table view. Made for a handful of
+ * slices: each gets a tile with its count at headline size.
  *
  * Hover is the tooltip: pointing at a slice or its legend row swaps the centre
  * to that slice's count and share and dims the rest — no floating box to
@@ -206,9 +207,11 @@ export function DonutBreakdown({
             onMouseEnter={() => setHovered(item.label)}
             onMouseLeave={() => setHovered(null)}
           >
-            <span className="viz-swatch" style={{ background: item.color ?? VIZ[i % VIZ.length] }} />
-            <span className="viz-legend-label">{item.label}</span>
-            <span className="viz-legend-value">
+            <span className="viz-donut-row-head">
+              <span className="viz-swatch" style={{ background: item.color ?? VIZ[i % VIZ.length] }} />
+              <span className="viz-legend-label">{item.label}</span>
+            </span>
+            <span className="viz-donut-row-value">
               {item.value}
               <span className="viz-legend-pct">{pct(item.value, total)}</span>
             </span>

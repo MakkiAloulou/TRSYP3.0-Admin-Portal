@@ -8,7 +8,6 @@ import {
   IEEE_CHECK_LABELS,
   deriveIeeeState,
   type IeeeCheckState,
-  type IeeeIssue,
 } from '@/lib/ieee-verification';
 
 /** Status palette — reserved for state, never reused as a series colour. */
@@ -19,31 +18,11 @@ const STATUS = {
   critical: '#d03b3b',
 } as const;
 
-/** Slice order around the donut. Also the adjacency the dataviz validator was
- *  run against: Not a member (orange) must not sit next to Lapsed (red) —
- *  at ΔE 10.4 the pair is hard to tell apart even with full colour vision —
- *  so Pending application separates them. Unchecked comes last, in grey. */
-const IEEE_ORDER: IeeeCheckState[] = [
-  'VERIFIED',
-  'MISMATCH',
-  'NOT_RAS',
-  'NOT_YP',
-  'NOT_MEMBER',
-  'APPLICANT',
-  'LAPSED',
-  'NOT_FOUND',
-  'UNVERIFIED',
-];
+/** Slice order around the donut, as validated for adjacent-pair contrast:
+ *  green, violet, red, then unchecked in grey. */
+const IEEE_ORDER: IeeeCheckState[] = ['VERIFIED', 'NOT_RAS', 'NOT_IEEE', 'UNVERIFIED'];
 
-const IEEE_NEEDS_ACTION = new Set<IeeeCheckState>([
-  'MISMATCH',
-  'NOT_RAS',
-  'NOT_YP',
-  'APPLICANT',
-  'NOT_MEMBER',
-  'LAPSED',
-  'NOT_FOUND',
-]);
+const IEEE_NEEDS_ACTION = new Set<IeeeCheckState>(['NOT_RAS', 'NOT_IEEE']);
 
 const VISA_ORDER = [
   { status: 'Pending', color: STATUS.warning },
@@ -65,13 +44,17 @@ export default async function DashboardPage() {
         banned: true,
         sb: true,
         createdAt: true,
-        user: { select: { active: true, email: true } },
-        // Just what deriveIeeeState needs to tell a current result from a stale one.
+        user: { select: { active: true, email: true, name: true, lastName: true } },
+        // The stored IEEE record and the profile it was checked against: the
+        // verdict is judged from these under the current rules.
         ieeeVerification: {
           select: {
-            status: true,
-            issues: true,
             memberStatus: true,
+            grade: true,
+            societies: true,
+            firstInitial: true,
+            lastInitial: true,
+            matchedBy: true,
             claimedIeeeId: true,
             claimedType: true,
             claimedIsRas: true,
@@ -122,7 +105,7 @@ export default async function DashboardPage() {
         ...p,
         ieeeVerification: p.ieeeVerification && {
           ...p.ieeeVerification,
-          issues: p.ieeeVerification.issues as IeeeIssue[],
+          matchedBy: p.ieeeVerification.matchedBy as 'IEEE_ID' | 'EMAIL' | null,
         },
       }),
     )

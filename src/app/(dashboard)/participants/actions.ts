@@ -4,8 +4,11 @@ import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@/lib/prisma';
 import { isIeeeConfigured, lookupMember, type MemberLookup } from '@/lib/ieee-api';
 import {
-  assessMember,
+  claimOf,
   isPlausibleIeeeId,
+  judgeRecord,
+  storedStatus,
+  type IeeeCheckState,
   type IeeeClaim,
   type IeeeIssue,
   type IeeeVerification,
@@ -16,7 +19,7 @@ import {
 const MAX_BATCH = 10;
 
 export type VerifyOutcome =
-  | { participantId: string; ok: true; verification: IeeeVerification }
+  | { participantId: string; ok: true; verification: IeeeVerification; state: IeeeCheckState }
   /** Nothing is stored for a failure: the participant stays unverified and the
    *  next run picks them up again. */
   | { participantId: string; ok: false; message: string };
@@ -62,18 +65,8 @@ export async function verifyParticipants(participantIds: string[]): Promise<Veri
         return { participantId: id, ok: false, message: 'Non-IEEE participants are not checked.' };
       }
 
-      const claim: IeeeClaim = {
-        ieeeId: p.ieeeId,
-        participantType: p.participantType,
-        isRas: p.isRas,
-        email: p.user.email,
-        emailConfirmed: p.user.active,
-        firstName: p.user.name,
-        lastName: p.user.lastName,
-      };
-
       try {
-        return await checkOne(id, claim, adminId);
+        return await checkOne(id, claimOf(p), adminId);
       } catch (error) {
         return {
           participantId: id,
@@ -109,37 +102,18 @@ async function checkOne(participantId: string, claim: IeeeClaim, adminId: string
 
   if (lookup.kind === 'error') return { participantId, ok: false, message: lookup.message };
 
-  let status: IeeeVerification['status'];
-  let issues: IeeeIssue[];
-  let record = null;
-
-  if (lookup.kind === 'not_found') {
-    status = 'NOT_FOUND';
-    issues = [
-      {
-        level: 'mismatch',
-        text:
-          claim.ieeeId === null
-            ? `No IEEE ID was given, and no IEEE record uses ${claim.email}.`
-            : isPlausibleIeeeId(claim.ieeeId)
-              ? `No IEEE record for ID ${claim.ieeeId} or for ${claim.email}.`
-              : `"${claim.ieeeId}" is not an IEEE member number (those have 8–9 digits), and no IEEE record uses ${claim.email}. Ask them for their real IEEE ID.`,
-      },
-    ];
-  } else {
-    record = lookup.record;
-    ({ status, issues } = assessMember(claim, record, matchedBy));
-  }
+  const record = lookup.kind === 'found' ? lookup.record : null;
+  const judgement = judgeRecord(claim, record, matchedBy);
 
   const data = {
-    status,
+    status: storedStatus(judgement, record),
     memberStatus: record?.memberStatus ?? null,
     grade: record?.grade ?? null,
     societies: record?.societies ?? [],
     firstInitial: record?.firstInitial ?? null,
     lastInitial: record?.lastInitial ?? null,
     matchedBy: record ? matchedBy : null,
-    issues,
+    issues: judgement.issues,
     claimedIeeeId: claim.ieeeId,
     claimedType: claim.participantType,
     claimedIsRas: claim.isRas,
@@ -155,7 +129,7 @@ async function checkOne(participantId: string, claim: IeeeClaim, adminId: string
     select: IEEE_VERIFICATION_SELECT,
   });
 
-  return { participantId, ok: true, verification: toClient(saved) };
+  return { participantId, ok: true, verification: toClient(saved), state: judgement.state };
 }
 
 async function currentAdminId() {

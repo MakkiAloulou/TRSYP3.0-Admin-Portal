@@ -166,28 +166,6 @@ button {
   border-color: rgba(167, 139, 250, 0.3);
 }
 
-/* IEEE "Not a member": an IEEE account that never held a membership. */
-.admin-badge--orange {
-  color: #f97316;
-  background: rgba(249, 115, 22, 0.08);
-  border-color: rgba(249, 115, 22, 0.3);
-}
-
-/* IEEE "Pending application": applied, not yet complete. */
-.admin-badge--lime {
-  color: #a3e635;
-  background: rgba(163, 230, 53, 0.08);
-  border-color: rgba(163, 230, 53, 0.3);
-}
-
-/* IEEE "Not found": apart from Lapsed's red — no record at all is a
-   different problem from a lapsed one. */
-.admin-badge--cyan {
-  color: #22d3ee;
-  background: rgba(34, 211, 238, 0.08);
-  border-color: rgba(34, 211, 238, 0.3);
-}
-
 /* Distinct from --pink: rejected and never-submitted are different states and
    must not read as the same colour. */
 .admin-badge--red {
@@ -533,8 +511,8 @@ button {
   font-size: 12px;
 }
 
-/* Donut + legend. Side by side on a full-width card; the legend splits into
-   two columns there so nine rows don't tower over a 200px ring. */
+/* Donut + legend. Side by side on a full-width card, the legend as a grid of
+   tiles — there are only a few slices, so each gets a big number. */
 .viz-donut {
   display: flex;
   flex-direction: column;
@@ -597,8 +575,8 @@ button {
 
 .viz-donut-legend {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px 28px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
   width: 100%;
   min-width: 0;
 }
@@ -606,23 +584,48 @@ button {
 @media (min-width: 720px) {
   .viz-donut-legend {
     flex: 1;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 .viz-donut-row {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  font-size: 13px;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
   cursor: default;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .viz-donut-row.is-active {
   background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.viz-donut-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 14px;
+}
+
+.viz-donut-row-value {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 600;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-donut-row-value .viz-legend-pct {
+  font-size: 13px;
+  font-weight: 400;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -2,51 +2,34 @@
 // imports so both server actions and client components can pull from it —
 // same split as src/lib/payment.ts.
 
+/** What is stored per check. Coarse on purpose: the verdict a row shows is
+ *  recomputed from the stored IEEE record on every render (see evaluateIeee),
+ *  so changing the rules never needs a re-check or a data migration. */
 export const IEEE_CHECK_STATUSES = ['VERIFIED', 'MISMATCH', 'INACTIVE', 'NOT_FOUND'] as const;
 export type IeeeCheckStatus = (typeof IEEE_CHECK_STATUSES)[number];
 
 /**
- * What a row shows — the stored status, made specific where the stored one is
- * too coarse to act on:
- * - MISMATCH whose only problem is RAS or YP → NOT_RAS / NOT_YP
- * - INACTIVE, by IEEE's own status → NOT_MEMBER (an IEEE account, never a
- *   membership), APPLICANT (application started, not completed) or LAPSED
- *   (was a member: arrears, expired)
- * plus the states with no stored result: never checked (or changed since), and
- * NonIEEE participants, who claim no membership and are never sent to IEEE.
+ * What a row shows:
+ * - VERIFIED — active member (or a pending application, with a note)
+ * - NOT_RAS — active member whose only problem is claiming RAS
+ * - NOT_IEEE — no active membership: never a member, lapsed, or no record
+ * plus the states with no current result: never checked (or changed since),
+ * and NonIEEE participants, who claim no membership and are never sent to IEEE.
  */
-export type IeeeCheckState =
-  | Exclude<IeeeCheckStatus, 'INACTIVE'>
-  | 'NOT_RAS'
-  | 'NOT_YP'
-  | 'NOT_MEMBER'
-  | 'APPLICANT'
-  | 'LAPSED'
-  | 'UNVERIFIED'
-  | 'NOT_APPLICABLE';
+export type IeeeCheckState = 'VERIFIED' | 'NOT_RAS' | 'NOT_IEEE' | 'UNVERIFIED' | 'NOT_APPLICABLE';
 
 export const IEEE_CHECK_LABELS: Record<IeeeCheckState, string> = {
   VERIFIED: 'Verified',
-  MISMATCH: 'Mismatch',
   NOT_RAS: 'Not RAS',
-  NOT_YP: 'Not YP',
-  NOT_MEMBER: 'Not a member',
-  APPLICANT: 'Pending application',
-  LAPSED: 'Lapsed',
-  NOT_FOUND: 'Not found',
+  NOT_IEEE: 'Not IEEE',
   UNVERIFIED: 'Unverified',
   NOT_APPLICABLE: 'Not needed',
 };
 
 export const IEEE_CHECK_BADGES: Record<IeeeCheckState, string> = {
   VERIFIED: 'admin-badge--green',
-  MISMATCH: 'admin-badge--amber',
   NOT_RAS: 'admin-badge--violet',
-  NOT_YP: 'admin-badge--pink',
-  NOT_MEMBER: 'admin-badge--orange',
-  APPLICANT: 'admin-badge--lime',
-  LAPSED: 'admin-badge--red',
-  NOT_FOUND: 'admin-badge--cyan',
+  NOT_IEEE: 'admin-badge--red',
   UNVERIFIED: 'admin-badge--gray',
   NOT_APPLICABLE: 'admin-badge--gray',
 };
@@ -55,24 +38,19 @@ export const IEEE_CHECK_BADGES: Record<IeeeCheckState, string> = {
  *  so a glance at a column or a chart says which problem it is. */
 export const IEEE_CHECK_COLORS: Record<IeeeCheckState, string> = {
   VERIFIED: '#00e87a',
-  MISMATCH: '#f59e0b',
   NOT_RAS: '#a78bfa',
-  NOT_YP: '#ff1d78',
-  NOT_MEMBER: '#f97316',
-  APPLICANT: '#a3e635',
-  LAPSED: '#ef4444',
-  NOT_FOUND: '#22d3ee',
+  NOT_IEEE: '#ef4444',
   UNVERIFIED: 'rgba(255,255,255,0.4)',
   NOT_APPLICABLE: 'rgba(255,255,255,0.25)',
 };
 
-/** A `mismatch` issue changes the status; a `warning` is shown but leaves a
- *  verified member verified — it is a reason to look, not to reject. */
+/** A `mismatch` issue changes the verdict; a `warning` is a note shown in the
+ *  participant's details — a reason to look, not to reject. */
 export type IeeeIssue = {
   level: 'mismatch' | 'warning';
   text: string;
-  /** Set on the issues the UI needs to recognise, not just display. */
-  code?: 'NOT_RAS' | 'NOT_YP';
+  /** Set on the issues the verdict needs to recognise, not just display. */
+  code?: 'NOT_RAS';
 };
 
 /** One stored check, as the client receives it (dates already ISO strings). */
@@ -84,6 +62,8 @@ export type IeeeVerification = {
   firstInitial: string | null;
   lastInitial: string | null;
   matchedBy: 'IEEE_ID' | 'EMAIL' | null;
+  /** The notes as they were when the check ran. Kept for the record; what is
+   *  displayed comes from evaluateIeee, under the current rules. */
   issues: IeeeIssue[];
   checkedAt: string;
   // What the participant claimed when this check ran. If any of it has changed
@@ -116,13 +96,10 @@ export type IeeeMemberRecord = {
   lastInitial: string;
 };
 
-// IEEE product catalog codes for the two memberships a registration claims:
-// Robotics and Automation Society, and Young Professionals.
+// IEEE product catalog code for Robotics and Automation Society membership.
 const RAS_CODE = 'MEMRA024';
-const YP_CODE = 'MEMYP060';
 
 export const isRasSociety = (code: string) => code.toUpperCase() === RAS_CODE;
-export const isYpSociety = (code: string) => code.toUpperCase() === YP_CODE;
 
 /**
  * IEEE member numbers run 8–9 digits (e.g. 90247965). The column is an Int, so
@@ -143,18 +120,24 @@ export function parseSocietyList(raw: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+export type IeeeJudgement = { state: Exclude<IeeeCheckState, 'UNVERIFIED' | 'NOT_APPLICABLE'>; issues: IeeeIssue[] };
+
 /**
- * Judges a found IEEE record against what the participant registered as.
+ * Judges an IEEE lookup against what the participant registered as. `record`
+ * is null when IEEE had no record under their ID or email.
  *
- * Only facts that change the fee count as a mismatch: active membership, the
- * Student vs Young Professional tier, and RAS. Everything that merely makes
- * the match less certain — initials, falling back to email — is a warning.
+ * Two facts decide the verdict: whether they hold an active membership, and,
+ * for those who registered as RAS, whether RAS is among their societies. Grade
+ * is deliberately not compared. Everything that merely makes the match less
+ * certain — initials, falling back to email — is a note.
  */
-export function assessMember(
+export function judgeRecord(
   claim: IeeeClaim,
-  record: IeeeMemberRecord,
+  record: IeeeMemberRecord | null,
   matchedBy: 'IEEE_ID' | 'EMAIL',
-): { status: IeeeCheckStatus; issues: IeeeIssue[] } {
+): IeeeJudgement {
+  if (!record) return { state: 'NOT_IEEE', issues: [] };
+
   const issues: IeeeIssue[] = [];
 
   if (matchedBy === 'EMAIL' && claim.ieeeId !== null) {
@@ -183,41 +166,29 @@ export function assessMember(
     });
   }
 
-  if (record.memberStatus.toLowerCase() !== 'active') {
-    const text = {
-      NOT_MEMBER: `Has an IEEE account but no membership (IEEE status "${record.memberStatus}", grade "${record.grade}").`,
-      APPLICANT: `Has applied for IEEE membership, but the application is not complete (IEEE status "${record.memberStatus}"). Usually awaiting payment.`,
-      LAPSED: `Membership is no longer active (IEEE status "${record.memberStatus}", grade "${record.grade}"). They need to renew.`,
-    }[inactiveKind(record.memberStatus)];
-    issues.push({ level: 'mismatch', text });
-    return { status: 'INACTIVE', issues };
-  }
+  const status = record.memberStatus.trim().toLowerCase();
 
-  const isStudentGrade = /student/i.test(record.grade);
-
-  if (claim.participantType === 'Student' && !isStudentGrade) {
+  // Applied and not yet through (usually payment). Counted as a member; the
+  // application has no societies to check RAS against yet.
+  if (status === 'applicant') {
     issues.push({
-      level: 'mismatch',
-      text: `Registered as Student, but IEEE grade is "${record.grade}".`,
+      level: 'warning',
+      text: 'Pending IEEE application: they have applied, but the membership is not complete yet (usually awaiting payment).',
     });
+    return { state: 'VERIFIED', issues };
   }
 
-  // One issue whichever way it fails, so "the only problem is YP" stays a
-  // single mismatch that displayStatus can name.
-  if (claim.participantType === 'YoungProfessional') {
-    if (isStudentGrade) {
+  if (status !== 'active') {
+    // "Not Applicable" is an IEEE account that never held a membership — the
+    // verdict says all there is to say. Anything else (Arrears, Inactive) was
+    // a membership once, which is worth telling them.
+    if (status !== 'not applicable') {
       issues.push({
-        level: 'mismatch',
-        code: 'NOT_YP',
-        text: `Registered as Young Professional, but IEEE grade is "${record.grade}".`,
-      });
-    } else if (!record.societies.some(isYpSociety)) {
-      issues.push({
-        level: 'mismatch',
-        code: 'NOT_YP',
-        text: 'Registered as Young Professional, but Young Professionals (MEMYP060) is not among their active societies.',
+        level: 'warning',
+        text: `Lapsed IEEE membership (IEEE status "${record.memberStatus}", grade "${record.grade}"). They were a member and need to renew.`,
       });
     }
+    return { state: 'NOT_IEEE', issues };
   }
 
   if (claim.isRas && !record.societies.some(isRasSociety)) {
@@ -226,10 +197,17 @@ export function assessMember(
       code: 'NOT_RAS',
       text: 'Registered as a RAS member, but RAS (MEMRA024) is not among their active societies.',
     });
+    return { state: 'NOT_RAS', issues };
   }
 
-  const status = issues.some((issue) => issue.level === 'mismatch') ? 'MISMATCH' : 'VERIFIED';
-  return { status, issues };
+  return { state: 'VERIFIED', issues };
+}
+
+/** The coarse status stored alongside a check, for the record. */
+export function storedStatus(judgement: IeeeJudgement, record: IeeeMemberRecord | null): IeeeCheckStatus {
+  if (!record) return 'NOT_FOUND';
+  if (judgement.state === 'NOT_IEEE') return 'INACTIVE';
+  return judgement.state === 'VERIFIED' ? 'VERIFIED' : 'MISMATCH';
 }
 
 /** IEEE returns only initials. Either order is accepted, since first and last
@@ -255,64 +233,83 @@ function initial(name: string) {
     .toUpperCase();
 }
 
-/** The subset of a participant row the state depends on. */
+/** The subset of a participant row the verdict depends on. */
 export type IeeeStateInput = {
   participantType: string;
   ieeeId: number | null;
   isRas: boolean;
-  user: { email: string };
+  user: { email: string; name: string; lastName: string; active: boolean };
   ieeeVerification: Pick<
     IeeeVerification,
-    'status' | 'issues' | 'memberStatus' | 'claimedIeeeId' | 'claimedType' | 'claimedIsRas' | 'claimedEmail'
+    | 'memberStatus'
+    | 'grade'
+    | 'societies'
+    | 'firstInitial'
+    | 'lastInitial'
+    | 'matchedBy'
+    | 'claimedIeeeId'
+    | 'claimedType'
+    | 'claimedIsRas'
+    | 'claimedEmail'
   > | null;
 };
 
 /**
+ * The verdict and notes a participant shows now: the stored IEEE record,
+ * judged under the current rules against their current profile.
+ *
  * A stored result only counts while it still describes the participant. Anyone
  * who changed their IEEE ID, tier, RAS flag or email after the check is back to
  * unverified, so the batch picks them up again.
  */
-export function deriveIeeeState(p: IeeeStateInput): IeeeCheckState {
-  if (p.participantType === 'NonIEEE') return 'NOT_APPLICABLE';
+export function evaluateIeee(p: IeeeStateInput): { state: IeeeCheckState; issues: IeeeIssue[] } {
+  if (p.participantType === 'NonIEEE') return { state: 'NOT_APPLICABLE', issues: [] };
 
   const v = p.ieeeVerification;
-  if (!v) return 'UNVERIFIED';
+  if (!v || isStale(p, v)) return { state: 'UNVERIFIED', issues: [] };
 
-  const stale =
+  const record: IeeeMemberRecord | null =
+    v.memberStatus === null
+      ? null
+      : {
+          memberStatus: v.memberStatus,
+          grade: v.grade ?? '',
+          societies: v.societies,
+          firstInitial: v.firstInitial ?? '',
+          lastInitial: v.lastInitial ?? '',
+        };
+
+  return judgeRecord(claimOf(p), record, v.matchedBy ?? 'IEEE_ID');
+}
+
+export function deriveIeeeState(p: IeeeStateInput): IeeeCheckState {
+  return evaluateIeee(p).state;
+}
+
+/** The claim a participant makes, from their profile as it stands. */
+export function claimOf(p: Omit<IeeeStateInput, 'ieeeVerification'>): IeeeClaim {
+  return {
+    ieeeId: p.ieeeId,
+    participantType: p.participantType,
+    isRas: p.isRas,
+    email: p.user.email,
+    emailConfirmed: p.user.active,
+    firstName: p.user.name,
+    lastName: p.user.lastName,
+  };
+}
+
+function isStale(p: IeeeStateInput, v: NonNullable<IeeeStateInput['ieeeVerification']>) {
+  return (
     v.claimedIeeeId !== p.ieeeId ||
     v.claimedType !== p.participantType ||
     v.claimedIsRas !== p.isRas ||
-    v.claimedEmail.toLowerCase() !== p.user.email.toLowerCase();
-
-  return stale ? 'UNVERIFIED' : displayStatus(v);
-}
-
-/** The stored status as a row shows it, so the admin knows the fix without
- *  opening it. A mismatch whose only problem is RAS or YP reads as "Not RAS" /
- *  "Not YP"; anything else wrong alongside it stays a plain mismatch. */
-export function displayStatus(v: Pick<IeeeVerification, 'status' | 'issues' | 'memberStatus'>): IeeeCheckState {
-  if (v.status === 'INACTIVE') return inactiveKind(v.memberStatus ?? '');
-  if (v.status !== 'MISMATCH') return v.status;
-  const mismatches = v.issues.filter((issue) => issue.level === 'mismatch');
-  return (mismatches.length === 1 && mismatches[0].code) || 'MISMATCH';
-}
-
-/**
- * Sorts IEEE's non-active statuses by what the admin does about them. Seen in
- * practice: "Not Applicable" and "Applicant" (both grade "Individual"),
- * "Arrears" and "Inactive". Anything unrecognised is treated as lapsed — the
- * only one of the three that says they once held a membership, so the one
- * that never understates a problem.
- */
-function inactiveKind(memberStatus: string): 'NOT_MEMBER' | 'APPLICANT' | 'LAPSED' {
-  const status = memberStatus.trim().toLowerCase();
-  if (status === 'not applicable') return 'NOT_MEMBER';
-  if (status === 'applicant') return 'APPLICANT';
-  return 'LAPSED';
+    v.claimedEmail.toLowerCase() !== p.user.email.toLowerCase()
+  );
 }
 
 /** Whether the stored result exists but no longer applies — shown as a note so
  *  "Unverified" after a completed check does not look like a lost result. */
 export function isIeeeResultStale(p: IeeeStateInput) {
-  return p.ieeeVerification !== null && p.participantType !== 'NonIEEE' && deriveIeeeState(p) === 'UNVERIFIED';
+  return p.ieeeVerification !== null && p.participantType !== 'NonIEEE' && isStale(p, p.ieeeVerification);
 }

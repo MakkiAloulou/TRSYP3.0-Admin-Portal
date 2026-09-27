@@ -11,7 +11,7 @@ import {
   type PaymentProofStatus,
   type PaymentState,
 } from '@/lib/payment';
-import { deriveIeeeState, type IeeeVerification } from '@/lib/ieee-verification';
+import { deriveIeeeState, evaluateIeee, type IeeeVerification } from '@/lib/ieee-verification';
 import { IeeeRunPanel, IeeeSection, IeeeStatusCell, useIeeeVerification, type RunOutcome } from './ieee-verify';
 
 type InternationalInfo = {
@@ -75,8 +75,9 @@ type Filters = {
 };
 
 /** Any single row state, plus two groupings: everything that needs a human
- *  (NEEDS_ACTION), and verified rows carrying notes. FAILED is only
- *  meaningful during a session, since failures are never stored. */
+ *  (NEEDS_ACTION), and verified rows carrying a note (NOTES). FAILED exists
+ *  only during a session, since failures are never stored, and is offered
+ *  only while there are some. */
 type IeeeFilter = 'ALL' | 'NEEDS_ACTION' | 'NOTES' | 'FAILED' | ReturnType<typeof deriveIeeeState>;
 
 const NO_FILTERS: Filters = {
@@ -138,17 +139,9 @@ function matchesIeee(p: ParticipantRow, filter: IeeeFilter, failures: Record<str
   const state = deriveIeeeState(p);
   switch (filter) {
     case 'NEEDS_ACTION':
-      return (
-        state === 'MISMATCH' ||
-        state === 'NOT_RAS' ||
-        state === 'NOT_YP' ||
-        state === 'NOT_MEMBER' ||
-        state === 'APPLICANT' ||
-        state === 'LAPSED' ||
-        state === 'NOT_FOUND'
-      );
+      return state === 'NOT_RAS' || state === 'NOT_IEEE';
     case 'NOTES':
-      return state === 'VERIFIED' && (p.ieeeVerification?.issues.length ?? 0) > 0;
+      return state === 'VERIFIED' && evaluateIeee(p).issues.length > 0;
     case 'FAILED':
       return state === 'UNVERIFIED' && failures[p.id] !== undefined;
     default:
@@ -290,17 +283,15 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
               { value: 'ALL', label: 'Any IEEE check' },
               { value: 'NEEDS_ACTION', label: 'Needs action' },
               { value: 'VERIFIED', label: 'Verified' },
-              { value: 'NOTES', label: 'Verified with notes' },
-              { value: 'MISMATCH', label: 'Mismatch' },
+              { value: 'NOTES', label: 'Verified with a note' },
               { value: 'NOT_RAS', label: 'Not RAS' },
-              { value: 'NOT_YP', label: 'Not YP' },
-              { value: 'APPLICANT', label: 'Pending application' },
-              { value: 'NOT_MEMBER', label: 'Not a member' },
-              { value: 'LAPSED', label: 'Lapsed' },
-              { value: 'NOT_FOUND', label: 'Not found' },
+              { value: 'NOT_IEEE', label: 'Not IEEE' },
               { value: 'UNVERIFIED', label: 'Unverified' },
-              { value: 'FAILED', label: 'Check failed' },
-              { value: 'NOT_APPLICABLE', label: 'Not needed (non-IEEE)' },
+              // Also kept while selected, so a run panel chip that picked it
+              // never leaves the dropdown showing an option that isn't applied.
+              ...(ieee.failedIds.length > 0 || filters.ieee === 'FAILED'
+                ? [{ value: 'FAILED', label: 'Check failed' }]
+                : []),
             ]}
           />
         </div>
