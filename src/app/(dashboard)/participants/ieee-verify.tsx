@@ -11,71 +11,39 @@ import {
   evaluateIeee,
   isIeeeResultStale,
   isRasSociety,
-  type IeeeCheckState,
   type IeeeVerification,
 } from '@/lib/ieee-verification';
 import type { ParticipantRow } from './participants-table';
-
-/** Participants per server round-trip. The action checks them in parallel, so
- *  this bounds concurrent IEEE calls; small enough that rows update steadily
- *  rather than in long silent jumps. */
-const BATCH_SIZE = 5;
 
 // A failed lookup is blue, apart from every verdict colour; the transient
 // "Checking…" is plain white — its pulse is what sets it apart.
 const FAILED_COLOR = 'var(--viz-3)';
 const CHECKING_COLOR = 'rgba(255,255,255,0.8)';
 
-/** A run's tally: each verdict as the row shows it, plus lookups that never
- *  reached one (IEEE down, timeout) and so stored nothing. */
-export type RunOutcome = Exclude<IeeeCheckState, 'UNVERIFIED' | 'NOT_APPLICABLE'> | 'FAILED';
-const RUN_OUTCOMES: RunOutcome[] = ['VERIFIED', 'NOT_RAS', 'NOT_IEEE', 'FAILED'];
-
-const OUTCOME_LABELS: Record<RunOutcome, string> = { ...IEEE_CHECK_LABELS, FAILED: 'Failed' };
-const OUTCOME_COLORS: Record<RunOutcome, string> = { ...IEEE_CHECK_COLORS, FAILED: FAILED_COLOR };
-
-export type IeeeRun = {
-  total: number;
-  done: number;
-  counts: Record<RunOutcome, number>;
-  phase: 'running' | 'stopping' | 'finished' | 'stopped' | 'aborted';
-  /** Why the run aborted — a server-level refusal, not one participant's. */
-  message: string | null;
-};
-
-type Activity = 'queued' | 'checking';
+type Activity = 'checking';
 
 /**
- * Drives batch and single-participant IEEE checks from the client.
+ * Re-checks single participants from their details.
  *
- * Results are merged into local state as each batch returns, so rows change
- * one after another instead of all at once at the end; the page is refreshed
- * from the server once when the work is done.
+ * Checks run automatically on the main website; this is the admin's way to
+ * refresh one result on demand. The new result is merged into local state so
+ * the row and modal update at once, then the page is refreshed from the server.
  */
 export function useIeeeVerification(participants: ParticipantRow[]) {
   const router = useRouter();
   const [checks, setChecks] = useState<Record<string, IeeeVerification>>({});
   const [activity, setActivity] = useState<Record<string, Activity>>({});
   const [failures, setFailures] = useState<Record<string, string>>({});
-  const [run, setRun] = useState<IeeeRun | null>(null);
   const [busy, setBusy] = useState(false);
-  // Refs, not state: read inside the running loop, which would otherwise see
-  // the values from the render that started it.
+  // A ref, not state: two quick clicks must not both pass the busy check.
   const busyRef = useRef(false);
-  const stopRequested = useRef(false);
 
   const rows = useMemo(
     () => participants.map((p) => (checks[p.id] ? { ...p, ieeeVerification: checks[p.id] } : p)),
     [participants, checks],
   );
 
-  const unverifiedIds = useMemo(
-    () => rows.filter((p) => deriveIeeeState(p) === 'UNVERIFIED').map((p) => p.id),
-    [rows],
-  );
-
-  // Closing the tab mid-run loses nothing already saved, but the admin should
-  // know the rest will not happen.
+  // Leaving mid-check loses nothing, but the admin should know it won't finish.
   useEffect(() => {
     if (!busy) return;
     const warn = (e: BeforeUnloadEvent) => e.preventDefault();
@@ -83,234 +51,45 @@ export function useIeeeVerification(participants: ParticipantRow[]) {
     return () => window.removeEventListener('beforeunload', warn);
   }, [busy]);
 
-  async function processBatch(ids: string[]): Promise<{ outcomes: RunOutcome[]; fatal: string | null }> {
-    setActivity((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [id, 'checking' as const])) }));
-
-    let result: VerifyResult;
-    try {
-      result = await verifyParticipants(ids);
-    } catch {
-      result = { ok: false, message: 'Could not reach the server.' };
-    }
-
-    const outcomes: RunOutcome[] = [];
-
-    if (!result.ok) {
-      const message = result.message;
-      setFailures((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [id, message])) }));
-      outcomes.push(...ids.map(() => 'FAILED' as const));
-    } else {
-      const fresh: Record<string, IeeeVerification> = {};
-      const failed: Record<string, string> = {};
-      for (const outcome of result.outcomes) {
-        if (outcome.ok) {
-          fresh[outcome.participantId] = outcome.verification;
-          outcomes.push(outcome.state as RunOutcome);
-        } else {
-          failed[outcome.participantId] = outcome.message;
-          outcomes.push('FAILED');
-        }
-      }
-      setChecks((current) => ({ ...current, ...fresh }));
-      setFailures((current) => {
-        const next = { ...current, ...failed };
-        for (const id of Object.keys(fresh)) delete next[id];
-        return next;
-      });
-    }
-
-    setActivity((current) => {
-      const next = { ...current };
-      for (const id of ids) delete next[id];
-      return next;
-    });
-
-    return { outcomes, fatal: result.ok ? null : result.message };
-  }
-
-  /** Runs the given participants through IEEE, BATCH_SIZE at a time. */
-  async function verify(ids: string[]) {
-    if (busyRef.current || ids.length === 0) return;
-    busyRef.current = true;
-    setBusy(true);
-    stopRequested.current = false;
-
-    const counts = Object.fromEntries(RUN_OUTCOMES.map((o) => [o, 0])) as Record<RunOutcome, number>;
-    setRun({ total: ids.length, done: 0, counts: { ...counts }, phase: 'running', message: null });
-    setActivity(Object.fromEntries(ids.map((id) => [id, 'queued' as const])));
-
-    let phase: IeeeRun['phase'] = 'finished';
-    let message: string | null = null;
-    let done = 0;
-
-    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
-      if (stopRequested.current) {
-        phase = 'stopped';
-        break;
-      }
-
-      const batch = ids.slice(i, i + BATCH_SIZE);
-      const { outcomes, fatal } = await processBatch(batch);
-      for (const outcome of outcomes) counts[outcome]++;
-      done += batch.length;
-      setRun((current) => current && { ...current, done, counts: { ...counts } });
-
-      // A refusal of the whole request (not signed in, credentials missing)
-      // will refuse every later batch the same way.
-      if (fatal) {
-        phase = 'aborted';
-        message = fatal;
-        break;
-      }
-    }
-
-    setActivity({});
-    setRun((current) => current && { ...current, phase, message });
-    busyRef.current = false;
-    setBusy(false);
-    router.refresh();
-  }
-
-  /** Re-checks one participant without disturbing the batch panel. */
   async function recheck(id: string) {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
-    await processBatch([id]);
+    setActivity({ [id]: 'checking' });
+
+    let result: VerifyResult;
+    try {
+      result = await verifyParticipants([id]);
+    } catch {
+      result = { ok: false, message: 'Could not reach the server.' };
+    }
+
+    const outcome = result.ok ? result.outcomes[0] : null;
+    if (outcome?.ok) {
+      setChecks((current) => ({ ...current, [id]: outcome.verification }));
+      setFailures((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    } else {
+      const message = outcome ? outcome.message : result.ok ? 'No result returned.' : result.message;
+      setFailures((current) => ({ ...current, [id]: message }));
+    }
+
+    setActivity({});
     busyRef.current = false;
     setBusy(false);
     router.refresh();
   }
 
-  function stop() {
-    stopRequested.current = true;
-    setRun((current) => (current?.phase === 'running' ? { ...current, phase: 'stopping' } : current));
-  }
-
-  /** Failed lookups that are still unverified — the ones worth retrying. */
+  /** Participants whose last re-check failed and who are still unverified. */
   const failedIds = useMemo(
-    () => unverifiedIds.filter((id) => failures[id] !== undefined),
-    [unverifiedIds, failures],
+    () => rows.filter((p) => failures[p.id] !== undefined && deriveIeeeState(p) === 'UNVERIFIED').map((p) => p.id),
+    [rows, failures],
   );
 
-  return {
-    rows,
-    activity,
-    failures,
-    run,
-    busy,
-    unverifiedIds,
-    failedIds,
-    verify,
-    recheck,
-    stop,
-    dismiss: () => setRun(null),
-  };
-}
-
-/* ─── Batch progress panel ─────────────────────────────────────────── */
-
-export function IeeeRunPanel({
-  run,
-  failedCount,
-  onStop,
-  onRetryFailed,
-  onDismiss,
-  onShow,
-}: {
-  run: IeeeRun;
-  failedCount: number;
-  onStop: () => void;
-  onRetryFailed: () => void;
-  onDismiss: () => void;
-  /** Filters the table to one outcome. */
-  onShow: (outcome: RunOutcome) => void;
-}) {
-  const active = run.phase === 'running' || run.phase === 'stopping';
-
-  const headline = {
-    running: `Checking ${Math.min(run.done + 1, run.total)} of ${run.total} with IEEE…`,
-    stopping: `Stopping after the current batch… (${run.done} of ${run.total})`,
-    finished: `Checked ${run.total} participant${run.total === 1 ? '' : 's'}`,
-    stopped: `Stopped after ${run.done} of ${run.total}`,
-    aborted: `Stopped after ${run.done} of ${run.total}`,
-  }[run.phase];
-
-  return (
-    <div className="admin-card ieee-run" role="status" aria-live="polite">
-      <div className="ieee-run-head">
-        <div>
-          <div className="ieee-run-title">IEEE verification</div>
-          <div className="ieee-run-headline">{headline}</div>
-        </div>
-        <div className="ieee-run-actions">
-          {active ? (
-            <button
-              type="button"
-              className="admin-btn-secondary px-3 py-1.5 text-xs"
-              onClick={onStop}
-              disabled={run.phase === 'stopping'}
-            >
-              Stop
-            </button>
-          ) : (
-            <>
-              {failedCount > 0 && (
-                <button type="button" className="admin-btn-primary px-3 py-1.5 text-xs" onClick={onRetryFailed}>
-                  Retry {failedCount} failed
-                </button>
-              )}
-              <button type="button" className="admin-btn-secondary px-3 py-1.5 text-xs" onClick={onDismiss}>
-                Dismiss
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* One segment per outcome, sized against the whole run, so the bar fills
-          in the colours of what was found rather than a single progress hue. */}
-      <div
-        className="ieee-run-bar"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={run.total}
-        aria-valuenow={run.done}
-      >
-        {RUN_OUTCOMES.map((outcome) =>
-          run.counts[outcome] > 0 ? (
-            <span
-              key={outcome}
-              style={{ width: `${(run.counts[outcome] / run.total) * 100}%`, background: OUTCOME_COLORS[outcome] }}
-            />
-          ) : null,
-        )}
-      </div>
-
-      {run.message && (
-        <div className="pay-error">
-          {run.message}
-        </div>
-      )}
-
-      <div className="ieee-run-chips">
-        {RUN_OUTCOMES.map((outcome) => (
-          <button
-            key={outcome}
-            type="button"
-            className="ieee-chip"
-            onClick={() => onShow(outcome)}
-            disabled={run.counts[outcome] === 0}
-            title={`Show ${OUTCOME_LABELS[outcome].toLowerCase()} participants`}
-          >
-            <span className="pay-dot" style={{ background: OUTCOME_COLORS[outcome] }} />
-            {OUTCOME_LABELS[outcome]}
-            <span className="ieee-chip-count">{run.counts[outcome]}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+  return { rows, activity, failures, busy, failedIds, recheck };
 }
 
 /* ─── Table cell ───────────────────────────────────────────────────── */
@@ -330,9 +109,6 @@ export function IeeeStatusCell({
 }) {
   if (activity === 'checking') {
     return <StateLine color={CHECKING_COLOR} label="Checking…" pulse />;
-  }
-  if (activity === 'queued') {
-    return <StateLine color="rgba(255,255,255,0.25)" label="Queued" />;
   }
 
   const state = deriveIeeeState(p);

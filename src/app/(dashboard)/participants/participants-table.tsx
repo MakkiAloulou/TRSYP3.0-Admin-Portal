@@ -12,7 +12,7 @@ import {
   type PaymentState,
 } from '@/lib/payment';
 import { deriveIeeeState, evaluateIeee, type IeeeVerification } from '@/lib/ieee-verification';
-import { IeeeRunPanel, IeeeSection, IeeeStatusCell, useIeeeVerification, type RunOutcome } from './ieee-verify';
+import { IeeeSection, IeeeStatusCell, useIeeeVerification } from './ieee-verify';
 
 type InternationalInfo = {
   dateOfBirth: string;
@@ -189,12 +189,6 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
     setFilters((current) => ({ ...current, [key]: value }));
   }
 
-  function showRunOutcome(outcome: RunOutcome) {
-    // Only the IEEE filter changes here; clearing the rest guarantees every
-    // participant the chip counted is actually on screen.
-    setFilters({ ...NO_FILTERS, ieee: outcome });
-  }
-
   function handleExport() {
     // Exports what is on screen — filtering and then exporting is the point.
     downloadCsv(buildParticipantsCsv(visible), participantsCsvFilename());
@@ -219,21 +213,6 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
             disabled={visible.length === 0}
           >
             Export CSV
-          </button>
-          {/* Every unverified IEEE participant, regardless of the filters: the
-              filters decide what is shown, not who needs checking. */}
-          <button
-            type="button"
-            className="admin-btn-primary px-4 py-2 text-sm"
-            onClick={() => ieee.verify(ieee.unverifiedIds)}
-            disabled={ieee.busy || ieee.unverifiedIds.length === 0}
-            title={
-              ieee.unverifiedIds.length === 0
-                ? 'Every IEEE participant has an up-to-date check'
-                : "Check every unverified participant against IEEE's member records"
-            }
-          >
-            {ieee.busy ? 'Verifying…' : `Verify IEEE (${ieee.unverifiedIds.length})`}
           </button>
         </div>
 
@@ -287,8 +266,8 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
               { value: 'NOT_RAS', label: 'Not RAS' },
               { value: 'NOT_IEEE', label: 'Not IEEE' },
               { value: 'UNVERIFIED', label: 'Unverified' },
-              // Also kept while selected, so a run panel chip that picked it
-              // never leaves the dropdown showing an option that isn't applied.
+              // Also kept while selected, so the dropdown never shows an
+              // option that isn't the one applied.
               ...(ieee.failedIds.length > 0 || filters.ieee === 'FAILED'
                 ? [{ value: 'FAILED', label: 'Check failed' }]
                 : []),
@@ -307,17 +286,6 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
           )}
         </div>
       </div>
-
-      {ieee.run && (
-        <IeeeRunPanel
-          run={ieee.run}
-          failedCount={ieee.failedIds.length}
-          onStop={ieee.stop}
-          onRetryFailed={() => ieee.verify(ieee.failedIds)}
-          onDismiss={ieee.dismiss}
-          onShow={showRunOutcome}
-        />
-      )}
 
       <div className="admin-card overflow-x-auto">
         <table className="min-w-full text-sm">

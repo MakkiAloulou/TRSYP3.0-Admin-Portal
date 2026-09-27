@@ -1265,92 +1265,6 @@ button {
 }
 /* ─── IEEE membership verification ────────────────── */
 
-.ieee-run {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 20px;
-}
-
-.ieee-run-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ieee-run-title {
-  font-family: var(--font-heading);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-pink);
-}
-
-.ieee-run-headline {
-  margin-top: 2px;
-  font-size: 14px;
-  color: #fff;
-  font-variant-numeric: tabular-nums;
-}
-
-.ieee-run-actions {
-  display: flex;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-/* Segments are sized against the whole run, so the unfilled track is what is
-   still to come. */
-.ieee-run-bar {
-  display: flex;
-  height: 6px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.ieee-run-bar > span {
-  height: 100%;
-  transition: width 0.3s ease;
-}
-
-.ieee-run-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.ieee-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  transition: all 0.15s ease;
-}
-
-.ieee-chip:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.ieee-chip:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.ieee-chip-count {
-  margin-left: 6px;
-  color: #fff;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-
 .ieee-pulse {
   animation: ieeePulse 1s ease-in-out infinite;
 }
@@ -1366,10 +1280,8 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ieee-pulse,
-  .ieee-run-bar > span {
+  .ieee-pulse {
     animation: none;
-    transition: none;
   }
 }
 
@@ -1428,8 +1340,3 @@ button {
   background: rgba(0, 232, 122, 0.06);
 }
 
-@media (max-width: 640px) {
-  .ieee-run-head {
-    flex-direction: column;
-  }
-}
