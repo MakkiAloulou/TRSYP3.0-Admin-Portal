@@ -98,6 +98,7 @@ model Participant {
   ledTeams          Team[]             @relation("TeamLeader")
   user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   internationalInfo InternationalInfo? @relation("ParticipantInternationalInfo")
+  ieeeVerification  IeeeVerification?
 
   @@map("participants")
 }
@@ -186,7 +187,42 @@ model VisaApplication {
   @@map("visa_applications")
 }
 
+// --- Admin Portal Module ---
+/// Latest IEEE GetMemberStatus check per participant. Owned by the admin
+/// portal, not the backend: created by prisma/sql/ieee_verifications.sql.
+/// The claimed_* columns snapshot what the participant registered as when the
+/// check ran, so a later edit to any of them marks the result stale.
+model IeeeVerification {
+  id            String          @id @default(uuid())
+  participantId String          @unique @map("participant_id")
+  status        IeeeCheckStatus
+  memberStatus  String?         @map("member_status")
+  grade         String?
+  societies     String[]        @default([])
+  firstInitial  String?         @map("first_initial")
+  lastInitial   String?         @map("last_initial")
+  matchedBy     String?         @map("matched_by") // 'IEEE_ID' | 'EMAIL'
+  issues        Json            @default("[]") // IeeeIssue[]
+  claimedIeeeId Int?            @map("claimed_ieee_id")
+  claimedType   String          @map("claimed_type")
+  claimedIsRas  Boolean         @map("claimed_is_ras")
+  claimedEmail  String          @map("claimed_email")
+  checkedAt     DateTime        @default(now()) @map("checked_at")
+  checkedBy     String          @map("checked_by") // admins.id
+
+  participant Participant @relation(fields: [participantId], references: [id], onDelete: Cascade)
+
+  @@map("ieee_verifications")
+}
+
 // Enums
+
+enum IeeeCheckStatus {
+  VERIFIED
+  MISMATCH
+  INACTIVE
+  NOT_FOUND
+}
 
 /// The event a team competes in. A participant may hold one team per value.
 enum TeamActivity {

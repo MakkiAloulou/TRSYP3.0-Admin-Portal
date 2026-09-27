@@ -11,6 +11,8 @@ import {
   type PaymentProofStatus,
   type PaymentState,
 } from '@/lib/payment';
+import { deriveIeeeState, type IeeeVerification } from '@/lib/ieee-verification';
+import { IeeeRunPanel, IeeeSection, IeeeStatusCell, useIeeeVerification, type RunOutcome } from './ieee-verify';
 
 type InternationalInfo = {
   dateOfBirth: string;
@@ -37,6 +39,7 @@ export type ParticipantRow = {
   isInternational: boolean;
   banned: boolean;
   participantType: string;
+  isRas: boolean;
   sb: string | null;
   country: string;
   memberships: Membership[];
@@ -47,6 +50,9 @@ export type ParticipantRow = {
    *  review from turned down from never sent. Joined in by the page from the
    *  payments API, not a Participant field. */
   latestProof: { id: string; status: PaymentProofStatus } | null;
+  /** Latest IEEE membership check, if one has ever run. Whether it still
+   *  applies is decided by deriveIeeeState, not by its presence. */
+  ieeeVerification: IeeeVerification | null;
   user: {
     name: string;
     lastName: string;
@@ -65,7 +71,13 @@ type Filters = {
   /** A student branch code, 'ALL', or 'NONE' for participants without one. */
   sb: string;
   activity: ActivityFilter;
+  ieee: IeeeFilter;
 };
+
+/** Any single row state, plus two groupings: everything that needs a human
+ *  (NEEDS_ACTION), and verified rows carrying notes. FAILED is only
+ *  meaningful during a session, since failures are never stored. */
+type IeeeFilter = 'ALL' | 'NEEDS_ACTION' | 'NOTES' | 'FAILED' | ReturnType<typeof deriveIeeeState>;
 
 const NO_FILTERS: Filters = {
   query: '',
@@ -73,6 +85,7 @@ const NO_FILTERS: Filters = {
   type: 'ALL',
   sb: 'ALL',
   activity: 'ALL',
+  ieee: 'ALL',
 };
 
 /** Everything the search box looks through, lowercased once per participant. */
@@ -92,7 +105,7 @@ function searchableText(p: ParticipantRow) {
     .toLowerCase();
 }
 
-function matches(p: ParticipantRow, filters: Filters, haystack: string) {
+function matches(p: ParticipantRow, filters: Filters, haystack: string, failures: Record<string, string>) {
   const query = filters.query.trim().toLowerCase();
   if (query && !haystack.includes(query)) return false;
 
@@ -116,12 +129,36 @@ function matches(p: ParticipantRow, filters: Filters, haystack: string) {
     if (!p.memberships.some((m) => m.activity === filters.activity)) return false;
   }
 
+  if (filters.ieee !== 'ALL' && !matchesIeee(p, filters.ieee, failures)) return false;
+
   return true;
 }
 
+function matchesIeee(p: ParticipantRow, filter: IeeeFilter, failures: Record<string, string>) {
+  const state = deriveIeeeState(p);
+  switch (filter) {
+    case 'NEEDS_ACTION':
+      return state === 'MISMATCH' || state === 'NOT_RAS' || state === 'INACTIVE' || state === 'NOT_FOUND';
+    case 'NOTES':
+      return state === 'VERIFIED' && (p.ieeeVerification?.issues.length ?? 0) > 0;
+    case 'FAILED':
+      return state === 'UNVERIFIED' && failures[p.id] !== undefined;
+    default:
+      return state === filter;
+  }
+}
+
 export function ParticipantsTable({ participants }: { participants: ParticipantRow[] }) {
-  const [selected, setSelected] = useState<ParticipantRow | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const ieee = useIeeeVerification(participants);
+
+  // Rows with this session's IEEE results merged in; everything below reads
+  // these, so a row updates the moment its batch returns.
+  const rows = ieee.rows;
+
+  // Held by id so the open modal follows the row as its IEEE result arrives.
+  const selected = selectedId ? (rows.find((p) => p.id === selectedId) ?? null) : null;
 
   // Search text is rebuilt only when the list itself changes, not per keystroke.
   const haystacks = useMemo(
@@ -130,8 +167,8 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
   );
 
   const visible = useMemo(
-    () => participants.filter((p) => matches(p, filters, haystacks.get(p.id) ?? '')),
-    [participants, filters, haystacks],
+    () => rows.filter((p) => matches(p, filters, haystacks.get(p.id) ?? '', ieee.failures)),
+    [rows, filters, haystacks, ieee.failures],
   );
 
   // Taken from the data rather than the enum, so a new participant type appears
@@ -149,6 +186,12 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
 
   function set<K extends keyof Filters>(key: K, value: Filters[K]) {
     setFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function showRunOutcome(outcome: RunOutcome) {
+    // Only the IEEE filter changes here; clearing the rest guarantees every
+    // participant the chip counted is actually on screen.
+    setFilters({ ...NO_FILTERS, ieee: outcome });
   }
 
   function handleExport() {
@@ -175,6 +218,21 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
             disabled={visible.length === 0}
           >
             Export CSV
+          </button>
+          {/* Every unverified IEEE participant, regardless of the filters: the
+              filters decide what is shown, not who needs checking. */}
+          <button
+            type="button"
+            className="admin-btn-primary px-4 py-2 text-sm"
+            onClick={() => ieee.verify(ieee.unverifiedIds)}
+            disabled={ieee.busy || ieee.unverifiedIds.length === 0}
+            title={
+              ieee.unverifiedIds.length === 0
+                ? 'Every IEEE participant has an up-to-date check'
+                : "Check every unverified participant against IEEE's member records"
+            }
+          >
+            {ieee.busy ? 'Verifying…' : `Verify IEEE (${ieee.unverifiedIds.length})`}
           </button>
         </div>
 
@@ -216,6 +274,24 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
               { value: 'NONE', label: 'No team' },
             ]}
           />
+          <Select
+            label="IEEE check"
+            value={filters.ieee}
+            onChange={(v) => set('ieee', v as IeeeFilter)}
+            options={[
+              { value: 'ALL', label: 'Any IEEE check' },
+              { value: 'NEEDS_ACTION', label: 'Needs action' },
+              { value: 'VERIFIED', label: 'Verified' },
+              { value: 'NOTES', label: 'Verified with notes' },
+              { value: 'MISMATCH', label: 'Mismatch' },
+              { value: 'NOT_RAS', label: 'Not RAS' },
+              { value: 'INACTIVE', label: 'Inactive' },
+              { value: 'NOT_FOUND', label: 'Not found' },
+              { value: 'UNVERIFIED', label: 'Unverified' },
+              { value: 'FAILED', label: 'Check failed' },
+              { value: 'NOT_APPLICABLE', label: 'Not needed (non-IEEE)' },
+            ]}
+          />
         </div>
 
         <div className="part-toolbar-foot">
@@ -230,6 +306,17 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
         </div>
       </div>
 
+      {ieee.run && (
+        <IeeeRunPanel
+          run={ieee.run}
+          failedCount={ieee.failedIds.length}
+          onStop={ieee.stop}
+          onRetryFailed={() => ieee.verify(ieee.failedIds)}
+          onDismiss={ieee.dismiss}
+          onShow={showRunOutcome}
+        />
+      )}
+
       <div className="admin-card overflow-x-auto">
         <table className="min-w-full text-sm">
           <thead>
@@ -238,12 +325,13 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
               <Th>Email</Th>
               <Th>Type</Th>
               <Th>Payment</Th>
+              <Th>IEEE</Th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 && (
               <tr>
-                <td colSpan={4} className="viz-empty">
+                <td colSpan={5} className="viz-empty">
                   No participant matches these filters.
                 </td>
               </tr>
@@ -251,7 +339,7 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
             {visible.map((participant) => (
               <tr
                 key={participant.id}
-                onClick={() => setSelected(participant)}
+                onClick={() => setSelectedId(participant.id)}
                 className="admin-row"
                 style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
               >
@@ -267,13 +355,30 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
                 <Td onClick={(e) => e.stopPropagation()}>
                   <PaymentStatus participant={participant} />
                 </Td>
+                <Td>
+                  <IeeeStatusCell
+                    participant={participant}
+                    activity={ieee.activity[participant.id]}
+                    failure={ieee.failures[participant.id]}
+                  />
+                </Td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {selected && <ParticipantDetailModal participant={selected} onClose={() => setSelected(null)} />}
+      {selected && (
+        <ParticipantDetailModal participant={selected} onClose={() => setSelectedId(null)}>
+          <IeeeSection
+            participant={selected}
+            activity={ieee.activity[selected.id]}
+            failure={ieee.failures[selected.id]}
+            busy={ieee.busy}
+            onRecheck={() => ieee.recheck(selected.id)}
+          />
+        </ParticipantDetailModal>
+      )}
     </>
   );
 }
@@ -350,17 +455,36 @@ function PaymentStatus({ participant }: { participant: ParticipantRow }) {
   );
 }
 
+/** Short enough that every type fits the same fixed badge width. */
+const TYPE_LABELS: Record<string, string> = {
+  YoungProfessional: 'YP',
+};
+
 function TypeBadge({ participantType }: { participantType: string }) {
-  if (participantType === 'NonIEEE') {
-    return <span className="admin-badge admin-badge--green">{participantType}</span>;
-  }
-  if (participantType === 'Student') {
-    return <span className="admin-badge admin-badge--pink">{participantType}</span>;
-  }
-  return <span className="admin-badge admin-badge--gray">{participantType}</span>;
+  const variant =
+    participantType === 'NonIEEE'
+      ? 'admin-badge--green'
+      : participantType === 'Student'
+        ? 'admin-badge--pink'
+        : 'admin-badge--gray';
+
+  return (
+    <span className={`admin-badge part-type-badge ${variant}`} title={participantType}>
+      {TYPE_LABELS[participantType] ?? participantType}
+    </span>
+  );
 }
 
-function ParticipantDetailModal({ participant: p, onClose }: { participant: ParticipantRow; onClose: () => void }) {
+function ParticipantDetailModal({
+  participant: p,
+  onClose,
+  children,
+}: {
+  participant: ParticipantRow;
+  onClose: () => void;
+  /** Extra sections rendered after the participant's own details. */
+  children?: React.ReactNode;
+}) {
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
@@ -383,6 +507,7 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
           <PaymentBadge participant={p} />
           {p.banned && <span className="admin-badge admin-badge--pink">Banned</span>}
           {p.isInternational && <span className="admin-badge admin-badge--pink">International</span>}
+          {p.isRas && <span className="admin-badge admin-badge--gray">RAS</span>}
         </div>
 
         <div className="space-y-4">
@@ -418,6 +543,8 @@ function ParticipantDetailModal({ participant: p, onClose }: { participant: Part
               </DetailGrid>
             </div>
           )}
+
+          {children}
         </div>
       </div>
     </div>

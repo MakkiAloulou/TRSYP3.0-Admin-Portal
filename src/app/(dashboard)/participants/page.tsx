@@ -26,6 +26,7 @@ export default async function ParticipantsPage() {
         isInternational: true,
         banned: true,
         participantType: true,
+        isRas: true,
         sb: true,
         country: true,
         // One membership per activity (DB-enforced), so this is at most 3 rows.
@@ -46,6 +47,26 @@ export default async function ParticipantsPage() {
             expectedDepartureDate: true,
             requiresVisaLetter: true,
             visaApplication: { select: { status: true } },
+          },
+        },
+        // Latest IEEE membership check. The claimed* snapshot is what lets the
+        // table tell a still-valid result from one the participant has since
+        // invalidated by editing their profile.
+        ieeeVerification: {
+          select: {
+            status: true,
+            memberStatus: true,
+            grade: true,
+            societies: true,
+            firstInitial: true,
+            lastInitial: true,
+            matchedBy: true,
+            issues: true,
+            checkedAt: true,
+            claimedIeeeId: true,
+            claimedType: true,
+            claimedIsRas: true,
+            claimedEmail: true,
           },
         },
         user: {

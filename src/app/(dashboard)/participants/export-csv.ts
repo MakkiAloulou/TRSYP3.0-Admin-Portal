@@ -1,4 +1,5 @@
 import type { ParticipantRow } from './participants-table';
+import { IEEE_CHECK_LABELS, deriveIeeeState } from '@/lib/ieee-verification';
 
 /**
  * Flattens a participant into one spreadsheet row. Everything an admin might
@@ -13,6 +14,13 @@ const COLUMNS: { header: string; value: (p: ParticipantRow) => string }[] = [
   { header: 'Gender', value: (p) => p.gender },
   { header: 'Participant type', value: (p) => p.participantType },
   { header: 'IEEE ID', value: (p) => p.ieeeId?.toString() ?? '' },
+  { header: 'IEEE check', value: (p) => IEEE_CHECK_LABELS[deriveIeeeState(p)] },
+  {
+    header: 'IEEE check notes',
+    // Only for a result that still applies; a stale one describes an old profile.
+    value: (p) =>
+      deriveIeeeState(p) === 'UNVERIFIED' ? '' : (p.ieeeVerification?.issues.map((i) => i.text).join(' | ') ?? ''),
+  },
   { header: 'Student branch', value: (p) => p.sb ?? '' },
   { header: 'Country', value: (p) => p.country },
   { header: 'Paid', value: (p) => yesNo(p.paid) },
