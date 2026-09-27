@@ -87,8 +87,27 @@ export async function getParticipantsByActivity(activity: TeamActivity) {
       isInternational: true,
       banned: true,
       participantType: true,
+      isRas: true,
       sb: true,
       country: true,
+      // Latest IEEE check, for the export's IEEE columns.
+      ieeeVerification: {
+        select: {
+          status: true,
+          memberStatus: true,
+          grade: true,
+          societies: true,
+          firstInitial: true,
+          lastInitial: true,
+          matchedBy: true,
+          issues: true,
+          checkedAt: true,
+          claimedIeeeId: true,
+          claimedType: true,
+          claimedIsRas: true,
+          claimedEmail: true,
+        },
+      },
       // One membership per activity (DB-enforced), so this is at most 3 rows.
       memberships: {
         select: {

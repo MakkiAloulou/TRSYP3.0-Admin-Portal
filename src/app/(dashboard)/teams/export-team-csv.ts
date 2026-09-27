@@ -1,6 +1,7 @@
 import type { TeamActivity } from '@prisma/client';
 import type { ParticipantRow } from '../participants/participants-table';
 import { FABLAB_AXES } from './teams-grid';
+import { IEEE_CSV_COLUMNS } from '../participants/ieee-csv';
 
 /** A participant as loaded by `getParticipantsByActivity`, whose teams also carry the FABLAB fields. */
 export type TeamParticipantRow = Omit<ParticipantRow, 'memberships'> & {
@@ -43,6 +44,7 @@ function columnsFor(activity: TeamActivity): Column[] {
     { header: 'Gender', value: (p) => p.gender },
     { header: 'Participant type', value: (p) => p.participantType },
     { header: 'IEEE ID', value: (p) => p.ieeeId?.toString() ?? '' },
+    ...IEEE_CSV_COLUMNS,
     { header: 'Student branch', value: (p) => p.sb ?? '' },
     { header: 'Country', value: (p) => p.country },
     { header: `${label} team`, value: (p) => team(p)?.name ?? '' },
