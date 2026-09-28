@@ -9,8 +9,11 @@ import {
   IEEE_CHECK_LABELS,
   deriveIeeeState,
   evaluateIeee,
+  hasIeeeResult,
   isIeeeResultStale,
+  isRasMember,
   isRasSociety,
+  recordSummary,
   type IeeeVerification,
 } from '@/lib/ieee-verification';
 import type { ParticipantRow } from './participants-table';
@@ -22,6 +25,8 @@ const CHECKING_COLOR = 'rgba(255,255,255,0.8)';
 
 type Activity = 'checking';
 
+type Checked = { verification: IeeeVerification; priced: { participantType: string; isRas: boolean } };
+
 /**
  * Re-checks single participants from their details.
  *
@@ -31,7 +36,7 @@ type Activity = 'checking';
  */
 export function useIeeeVerification(participants: ParticipantRow[]) {
   const router = useRouter();
-  const [checks, setChecks] = useState<Record<string, IeeeVerification>>({});
+  const [checks, setChecks] = useState<Record<string, Checked>>({});
   const [activity, setActivity] = useState<Record<string, Activity>>({});
   const [failures, setFailures] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -39,7 +44,13 @@ export function useIeeeVerification(participants: ParticipantRow[]) {
   const busyRef = useRef(false);
 
   const rows = useMemo(
-    () => participants.map((p) => (checks[p.id] ? { ...p, ieeeVerification: checks[p.id] } : p)),
+    // A re-check writes the priced type/RAS through as well as the row; both
+    // are merged, or the row would read as stale until the refresh lands.
+    () =>
+      participants.map((p) => {
+        const checked = checks[p.id];
+        return checked ? { ...p, ...checked.priced, ieeeVerification: checked.verification } : p;
+      }),
     [participants, checks],
   );
 
@@ -66,7 +77,7 @@ export function useIeeeVerification(participants: ParticipantRow[]) {
 
     const outcome = result.ok ? result.outcomes[0] : null;
     if (outcome?.ok) {
-      setChecks((current) => ({ ...current, [id]: outcome.verification }));
+      setChecks((current) => ({ ...current, [id]: { verification: outcome.verification, priced: outcome.priced } }));
       setFailures((current) => {
         const next = { ...current };
         delete next[id];
@@ -83,9 +94,12 @@ export function useIeeeVerification(participants: ParticipantRow[]) {
     router.refresh();
   }
 
-  /** Participants whose last re-check failed and who are still unverified. */
+  /** Participants whose last re-check failed and who have no current result. */
   const failedIds = useMemo(
-    () => rows.filter((p) => failures[p.id] !== undefined && deriveIeeeState(p) === 'UNVERIFIED').map((p) => p.id),
+    () =>
+      rows
+        .filter((p) => failures[p.id] !== undefined && deriveIeeeState(p) === 'UNVERIFIED')
+        .map((p) => p.id),
     [rows, failures],
   );
 
@@ -95,8 +109,8 @@ export function useIeeeVerification(participants: ParticipantRow[]) {
 /* ─── Table cell ───────────────────────────────────────────────────── */
 
 /**
- * The verdict alone. Reasons and notes are in the participant's details, so
- * the column stays a one-glance scan.
+ * The state alone. IEEE's full answer and any notes are in the participant's
+ * details, so the column stays a one-glance scan.
  */
 export function IeeeStatusCell({
   participant: p,
@@ -113,11 +127,13 @@ export function IeeeStatusCell({
 
   const state = deriveIeeeState(p);
 
-  if (state === 'UNVERIFIED' && failure) {
+  // Only when there is no current result to show instead.
+  if (failure && state === 'UNVERIFIED') {
     return <StateLine color={FAILED_COLOR} label="Check failed" />;
   }
 
-  return <StateLine color={IEEE_CHECK_COLORS[state]} label={IEEE_CHECK_LABELS[state]} />;
+  const ras = state === 'VERIFIED' && p.ieeeVerification !== null && isRasMember(p.ieeeVerification);
+  return <StateLine color={IEEE_CHECK_COLORS[state]} label={`${IEEE_CHECK_LABELS[state]}${ras ? ' · RAS' : ''}`} />;
 }
 
 function StateLine({ color, label, pulse = false }: { color: string; label: string; pulse?: boolean }) {
@@ -131,6 +147,10 @@ function StateLine({ color, label, pulse = false }: { color: string; label: stri
 
 /* ─── Detail modal section ─────────────────────────────────────────── */
 
+/**
+ * IEEE's answer for this participant, worded as what IEEE said — the profile's
+ * type and RAS are set from it, so there is no claim to check it against.
+ */
 export function IeeeSection({
   participant: p,
   activity,
@@ -144,11 +164,9 @@ export function IeeeSection({
   busy: boolean;
   onRecheck: () => void;
 }) {
-  // Judged under the current rules, so the notes here always match the verdict.
   const { state, issues } = evaluateIeee(p);
   const v = p.ieeeVerification;
   const checking = activity !== undefined;
-  const current = state !== 'UNVERIFIED';
 
   return (
     <div>
@@ -156,107 +174,97 @@ export function IeeeSection({
         <h4 className="admin-heading text-xs uppercase" style={{ color: 'var(--color-pink)', letterSpacing: '0.1em' }}>
           IEEE Membership
         </h4>
-        {state !== 'NOT_APPLICABLE' && (
-          <button
-            type="button"
-            className="admin-btn-secondary px-3 py-1 text-xs"
-            onClick={onRecheck}
-            disabled={busy}
-            title={busy && !checking ? 'Wait for the running check to finish' : undefined}
-          >
-            {checking ? 'Checking…' : v ? 'Re-check' : 'Check now'}
-          </button>
-        )}
+        <button
+          type="button"
+          className="admin-btn-secondary px-3 py-1 text-xs"
+          onClick={onRecheck}
+          disabled={busy}
+          title={busy && !checking ? 'Wait for the running check to finish' : undefined}
+        >
+          {checking ? 'Checking…' : v ? 'Re-check' : 'Check now'}
+        </button>
       </div>
 
-      {state === 'NOT_APPLICABLE' ? (
-        <p className="text-sm" style={{ color: 'rgba(255,255,255,0.45)' }}>
-          Registered as non-IEEE, so there is nothing to verify.
-        </p>
-      ) : (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`admin-badge ${IEEE_CHECK_BADGES[state]}`}>{IEEE_CHECK_LABELS[state]}</span>
-            {v && (
-              <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
-                Checked {formatDateTime(v.checkedAt)}
-                {v.matchedBy && ` · matched by ${v.matchedBy === 'IEEE_ID' ? 'IEEE ID' : 'email'}`}
-              </span>
-            )}
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className={`admin-badge ${IEEE_CHECK_BADGES[state]}`}>{IEEE_CHECK_LABELS[state]}</span>
+          {v && (
+            <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
+              Checked {formatDateTime(v.checkedAt)} by {v.checkedBy}
+              {v.matchedBy && ` · matched by ${v.matchedBy === 'IEEE_ID' ? 'member number' : 'email'}`}
+            </span>
+          )}
+        </div>
+
+        {failure && (
+          <div className="ieee-issue ieee-issue--failed">
+            <span aria-hidden>✕</span>
+            <span>Last check failed: {failure}</span>
           </div>
+        )}
 
-          {failure && state === 'UNVERIFIED' && (
-            <div className="ieee-issue ieee-issue--failed">
-              <span aria-hidden>✕</span>
-              <span>Last check failed: {failure}</span>
-            </div>
-          )}
+        {state === 'UNVERIFIED' && !isIeeeResultStale(p) && (
+          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.55)' }}>
+            No verification yet. The main website checks new participants with IEEE within seconds of
+            registering.
+          </p>
+        )}
 
-          {isIeeeResultStale(p) && v && (
-            <div className="ieee-issue ieee-issue--warning">
-              <span aria-hidden>!</span>
-              <span>
-                Profile changed since this check (it was run for {v.claimedType}
-                {v.claimedIeeeId !== null ? `, IEEE ID ${v.claimedIeeeId}` : ', no IEEE ID'}
-                {v.claimedIsRas ? ', RAS' : ''}). Re-check to update it.
-              </span>
-            </div>
-          )}
+        {isIeeeResultStale(p) && v && (
+          <div className="ieee-issue ieee-issue--warning">
+            <span aria-hidden>!</span>
+            <span>
+              This check was for {v.claimedIeeeId !== null ? `member number ${v.claimedIeeeId}` : 'no member number'}{' '}
+              and {v.claimedEmail}. Their details have changed since; the main website re-checks them automatically.
+            </span>
+          </div>
+        )}
 
-          {issues.map((issue, i) => (
-            <div key={i} className={`ieee-issue ieee-issue--${issue.level}`}>
-              <span aria-hidden>{issue.level === 'mismatch' ? '✕' : '!'}</span>
-              <span>{issue.text}</span>
-            </div>
-          ))}
+        {hasIeeeResult(state) && v && (
+          <>
+            <p className="text-sm text-white">{recordSummary(v)}</p>
 
-          {state === 'VERIFIED' && issues.length === 0 && (
-            <div className="ieee-issue ieee-issue--ok">
-              <span aria-hidden>✓</span>
-              <span>Active IEEE member; RAS and name initials match what they registered.</span>
-            </div>
-          )}
+            {issues.map((issue, i) => (
+              <div key={i} className="ieee-issue ieee-issue--warning">
+                <span aria-hidden>!</span>
+                <span>{issue.text}</span>
+              </div>
+            ))}
 
-          {current && v && v.memberStatus === null && (
             <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-              <IeeeDetail label="IEEE record" value="None found for their IEEE ID or email" />
-              <IeeeDetail label="Registered as" value={`${p.participantType}${p.isRas ? ' · RAS' : ''}`} />
-            </div>
-          )}
-
-          {current && v && v.memberStatus !== null && (
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-              <IeeeDetail label="IEEE status" value={v.memberStatus} />
+              <IeeeDetail label="IEEE status" value={v.memberStatus ?? 'No record'} />
               <IeeeDetail label="Grade" value={v.grade || '—'} />
               <IeeeDetail
                 label="Record initials"
                 value={v.firstInitial || v.lastInitial ? `${v.firstInitial}. ${v.lastInitial}.` : '—'}
               />
-              <IeeeDetail label="Registered as" value={`${p.participantType}${p.isRas ? ' · RAS' : ''}`} />
-              <div className="col-span-2">
-                <div className="text-[10px] uppercase" style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}>
-                  Active societies
-                </div>
-                {v.societies.length === 0 ? (
-                  <div className="text-sm text-white">None</div>
-                ) : (
-                  <div className="mt-1 flex flex-wrap gap-1.5">
-                    {v.societies.map((code) => (
-                      <span
-                        key={code}
-                        className={`ieee-society${isRasSociety(code) ? ' ieee-society--key' : ''}`}
-                      >
-                        {code}
-                        {isRasSociety(code) && ' · RAS'}
-                      </span>
-                    ))}
+              <IeeeDetail label="Priced as" value={`${p.participantType}${p.isRas ? ' · RAS' : ''}`} />
+              {v.memberStatus !== null && (
+                <div className="col-span-2">
+                  <div
+                    className="text-[10px] uppercase"
+                    style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}
+                  >
+                    Active societies
                   </div>
-                )}
-              </div>
+                  {v.societies.length === 0 ? (
+                    <div className="text-sm text-white">None</div>
+                  ) : (
+                    <div className="mt-1 flex flex-wrap gap-1.5">
+                      {v.societies.map((code) => (
+                        <span key={code} className={`ieee-society${isRasSociety(code) ? ' ieee-society--key' : ''}`}>
+                          {code}
+                          {isRasSociety(code) && ' · RAS'}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

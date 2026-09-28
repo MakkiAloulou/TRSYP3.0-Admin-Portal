@@ -82,7 +82,12 @@ model Participant {
   // 20260918000000_add_participant_facebook_link; this schema was stale.
   isRas             Boolean            @default(false) @map("is_ras")
   facebookLink      String?            @map("facebook_link")
+  // IEEE's verdict, not the participant's claim: the main website sets
+  // participant_type and is_ras from the ieee_verifications row.
   participantType   ParticipantType    @map("participant_type")
+  // The participant's own answer (added by the main backend). Decides Student
+  // vs YoungProfessional pricing for IEEE members; separate from the verdict.
+  careerStage       CareerStage?       @map("career_stage")
   sb                SB?
   country           COUNTRY
   createdAt         DateTime           @default(now()) @map("created_at")
@@ -235,6 +240,11 @@ enum TeamActivity {
 enum FablabAxis {
   SAMPLE_PREPARATION // Axis 1: Automated Sample Preparation
   WEIGHING_DOSING // Axis 2: Automated Weighing & Dosing Station
+}
+
+enum CareerStage {
+  Student
+  YoungProfessional
 }
 
 enum ParticipantType {

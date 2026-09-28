@@ -9,7 +9,6 @@ import {
   REJECTION_REASON_MAX,
   STATUS_LABELS,
   formatAmount,
-  hasFeeMismatch,
   isCashWithoutReceipt,
   isPdfReceipt,
   validateRejectionReason,
@@ -136,7 +135,7 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(0,232,122,0.12)' }}>
               <Th>Participant</Th>
-              <Th>Amount</Th>
+              <Th>Price</Th>
               <Th>Submitted</Th>
               <Th>Receipt</Th>
               <Th>Status</Th>
@@ -231,9 +230,7 @@ function ProofRow({
           <div className="font-medium text-white">{proof.participantName}</div>
           <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>{proof.participantEmail}</div>
         </Td>
-        <Td>
-          <AmountCell proof={proof} />
-        </Td>
+        <Td style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(proof.currentFee)}</Td>
         <Td style={{ color: 'rgba(255,255,255,0.5)' }}>{formatDateTime(proof.createdAt)}</Td>
         <Td>
           {cashInPerson ? (
@@ -285,21 +282,6 @@ function ProofRow({
         </tr>
       )}
     </>
-  );
-}
-
-/** When the fee moved after submission, both numbers are shown — the reviewer
- *  needs to see that what was paid is not what is now owed. */
-function AmountCell({ proof }: { proof: PaymentProofRow }) {
-  if (!hasFeeMismatch(proof)) {
-    return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(proof.amountSnapshot)}</span>;
-  }
-
-  return (
-    <span className="pay-amount-mismatch" title="The fee changed after this proof was submitted">
-      <span className="pay-amount-was">paid {formatAmount(proof.amountSnapshot)}</span>
-      owes {formatAmount(proof.currentFee)}
-    </span>
   );
 }
 
@@ -398,7 +380,7 @@ function ReceiptModal({ proof, url, onClose }: { proof: PaymentProofRow; url: st
         <div className="mb-4">
           <h3 className="admin-heading text-lg text-white">{proof.participantName}</h3>
           <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            {METHOD_LABELS[proof.method]} &middot; {formatAmount(proof.amountSnapshot)} &middot; {proof.fileName}
+            {METHOD_LABELS[proof.method]} &middot; {formatAmount(proof.currentFee)} &middot; {proof.fileName}
           </p>
         </div>
 
@@ -446,16 +428,6 @@ function ApproveModal({
           This marks <strong className="text-white">{proof.participantName}</strong> as paid. Approving cannot be undone
           from this dashboard.
         </p>
-
-        {hasFeeMismatch(proof) && (
-          <div className="pay-banner mb-4">
-            <span aria-hidden>!</span>
-            <span>
-              They paid {formatAmount(proof.amountSnapshot)} but now owe {formatAmount(proof.currentFee)}. Approving
-              settles them at the amount they sent.
-            </span>
-          </div>
-        )}
 
         {isCashWithoutReceipt(proof) && (
           <div className="pay-banner mb-4">

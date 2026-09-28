@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { withCheckerNames } from '@/lib/ieee-checkers';
 import { apiFetch } from '@/lib/trsyp-api';
 import { latestProofPerParticipant, type PaymentProofRow } from '@/lib/payment';
 import { ParticipantsTable } from './participants-table';
@@ -27,6 +28,7 @@ export default async function ParticipantsPage() {
         banned: true,
         participantType: true,
         isRas: true,
+        careerStage: true,
         sb: true,
         country: true,
         // One membership per activity (DB-enforced), so this is at most 3 rows.
@@ -63,6 +65,7 @@ export default async function ParticipantsPage() {
             matchedBy: true,
             issues: true,
             checkedAt: true,
+            checkedBy: true,
             claimedIeeeId: true,
             claimedType: true,
             claimedIsRas: true,
@@ -108,7 +111,8 @@ export default async function ParticipantsPage() {
 
   // JSON round-trip keeps Server -> Client Component props simple: Dates
   // become ISO strings, which is all the modal needs for display anyway.
-  const serialized = JSON.parse(JSON.stringify(participants));
+  // Admin ids in checked_by become names before anything reaches the client.
+  const serialized = JSON.parse(JSON.stringify(await withCheckerNames(participants)));
 
   const rows = serialized.map((participant: { id: string }) => ({
     ...participant,

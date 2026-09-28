@@ -8,6 +8,7 @@ import {
   IEEE_CHECK_LABELS,
   deriveIeeeState,
   type IeeeCheckState,
+  type IeeeIssue,
 } from '@/lib/ieee-verification';
 
 /** Status palette — reserved for state, never reused as a series colour. */
@@ -21,8 +22,6 @@ const STATUS = {
 /** Slice order around the donut, as validated for adjacent-pair contrast:
  *  green, violet, red, then unchecked in grey. */
 const IEEE_ORDER: IeeeCheckState[] = ['VERIFIED', 'NOT_RAS', 'NOT_IEEE', 'UNVERIFIED'];
-
-const IEEE_NEEDS_ACTION = new Set<IeeeCheckState>(['NOT_RAS', 'NOT_IEEE']);
 
 const VISA_ORDER = [
   { status: 'Pending', color: STATUS.warning },
@@ -55,6 +54,8 @@ export default async function DashboardPage() {
             firstInitial: true,
             lastInitial: true,
             matchedBy: true,
+            // Carries a RAS claim made under the old form (see claimedRas).
+            issues: true,
             claimedIeeeId: true,
             claimedType: true,
             claimedIsRas: true,
@@ -98,18 +99,18 @@ export default async function DashboardPage() {
   const hackathonTeams = teams.filter((t) => t.activity === 'FABLAB');
   const fullTeams = teams.filter((t) => t._count.memberships >= t.size).length;
 
-  // NonIEEE participants claim no membership, so they are outside the check.
-  const ieeeStates = participants
-    .map((p) =>
-      deriveIeeeState({
-        ...p,
-        ieeeVerification: p.ieeeVerification && {
-          ...p.ieeeVerification,
-          matchedBy: p.ieeeVerification.matchedBy as 'IEEE_ID' | 'EMAIL' | null,
-        },
-      }),
-    )
-    .filter((state) => state !== 'NOT_APPLICABLE');
+  // Every participant: participant_type is IEEE's verdict now, so a NonIEEE
+  // participant was looked up too (or is about to be).
+  const ieeeStates = participants.map((p) =>
+    deriveIeeeState({
+      ...p,
+      ieeeVerification: p.ieeeVerification && {
+        ...p.ieeeVerification,
+        matchedBy: p.ieeeVerification.matchedBy as 'IEEE_ID' | 'EMAIL' | null,
+        issues: p.ieeeVerification.issues as IeeeIssue[],
+      },
+    }),
+  );
 
   const ieeeItems = IEEE_ORDER.map((state) => ({
     label: IEEE_CHECK_LABELS[state],
@@ -117,9 +118,10 @@ export default async function DashboardPage() {
     color: IEEE_CHECK_COLORS[state],
   })).filter((item) => item.value > 0);
 
-  const ieeeVerified = ieeeStates.filter((s) => s === 'VERIFIED').length;
-  const ieeeUnchecked = ieeeStates.filter((s) => s === 'UNVERIFIED').length;
-  const ieeeNeedsAction = ieeeStates.filter((s) => IEEE_NEEDS_ACTION.has(s)).length;
+  // Both member tiers: RAS (Verified) and IEEE without RAS.
+  const ieeeVerified = ieeeStates.filter((s) => s === 'VERIFIED' || s === 'NOT_RAS').length;
+  const ieeeNotIeee = ieeeStates.filter((s) => s === 'NOT_IEEE').length;
+  const ieeePending = ieeeStates.filter((s) => s === 'UNVERIFIED').length;
 
   const visaItems = VISA_ORDER.map((v) => ({
     label: 'label' in v ? v.label : v.status,
@@ -169,17 +171,17 @@ export default async function DashboardPage() {
 
       <ChartCard
         title="IEEE verification"
-        subtitle={`Membership checks for ${ieeeStates.length} IEEE participants`}
+        subtitle={`IEEE's answer for all ${ieeeStates.length} participants`}
       >
         <DonutBreakdown
           items={ieeeItems}
           centerValue={sharePct(ieeeVerified, ieeeStates.length)}
-          centerLabel={`verified (${ieeeVerified} of ${ieeeStates.length})`}
-          emptyLabel="No IEEE participants yet"
+          centerLabel={`IEEE members (${ieeeVerified} of ${ieeeStates.length})`}
+          emptyLabel="No participants yet"
         />
         <div className="viz-footnote">
-          <span>{ieeeNeedsAction} need action</span>
-          <span>{ieeeUnchecked} not checked yet</span>
+          <span>{ieeeNotIeee} not IEEE members</span>
+          <span>{ieeePending} awaiting a current check</span>
         </div>
       </ChartCard>
 

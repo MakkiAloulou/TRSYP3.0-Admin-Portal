@@ -1,5 +1,6 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
+import { withCheckerNames } from '@/lib/ieee-checkers';
 import type { TeamActivity } from '@prisma/client';
 import type { TeamRow } from './teams-grid';
 
@@ -88,6 +89,7 @@ export async function getParticipantsByActivity(activity: TeamActivity) {
       banned: true,
       participantType: true,
       isRas: true,
+      careerStage: true,
       sb: true,
       country: true,
       // Latest IEEE check, for the export's IEEE columns.
@@ -102,6 +104,7 @@ export async function getParticipantsByActivity(activity: TeamActivity) {
           matchedBy: true,
           issues: true,
           checkedAt: true,
+          checkedBy: true,
           claimedIeeeId: true,
           claimedType: true,
           claimedIsRas: true,
@@ -145,5 +148,5 @@ export async function getParticipantsByActivity(activity: TeamActivity) {
 
   // JSON round-trip keeps Server -> Client Component props simple: Dates
   // become ISO strings, which is all the export needs for CSV anyway.
-  return JSON.parse(JSON.stringify(participants));
+  return JSON.parse(JSON.stringify(await withCheckerNames(participants)));
 }

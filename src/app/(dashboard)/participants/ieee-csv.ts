@@ -1,18 +1,25 @@
-import { IEEE_CHECK_LABELS, evaluateIeee, isRasSociety } from '@/lib/ieee-verification';
+import { IEEE_CHECK_LABELS, evaluateIeee, hasIeeeResult, isRasMember, recordSummary } from '@/lib/ieee-verification';
 import type { ParticipantRow } from './participants-table';
 
-type IeeeCsvRow = Pick<ParticipantRow, 'participantType' | 'ieeeId' | 'isRas' | 'user' | 'ieeeVerification'>;
+type IeeeCsvRow = Pick<ParticipantRow, 'participantType' | 'ieeeId' | 'isRas' | 'careerStage' | 'user' | 'ieeeVerification'>;
 
 /**
  * The IEEE verification columns, shared by the participants and team exports.
  *
- * The verdict and notes are judged under the current rules, like the table.
  * The raw IEEE fields are filled only while the stored result still applies —
- * a result the participant has since invalidated describes an old profile, so
- * those rows show "Unverified" and nothing else.
+ * one for an old member number or email no longer describes them, so those
+ * rows show "No verification yet" and nothing else. Career stage is the participant's own answer.
  */
 export const IEEE_CSV_COLUMNS: { header: string; value: (p: IeeeCsvRow) => string }[] = [
+  { header: 'Career stage', value: (p) => p.careerStage ?? '' },
   { header: 'IEEE check', value: (p) => IEEE_CHECK_LABELS[evaluateIeee(p).state] },
+  {
+    header: 'IEEE result',
+    value: (p) => {
+      const v = current(p);
+      return v ? recordSummary(v) : '';
+    },
+  },
   {
     header: 'IEEE status',
     value: (p) => current(p)?.memberStatus ?? (current(p) ? 'No record' : ''),
@@ -24,7 +31,7 @@ export const IEEE_CSV_COLUMNS: { header: string; value: (p: IeeeCsvRow) => strin
     value: (p) => {
       const v = current(p);
       if (!v || v.memberStatus === null) return '';
-      return v.societies.some(isRasSociety) ? 'Yes' : 'No';
+      return isRasMember(v) ? 'Yes' : 'No';
     },
   },
   {
@@ -34,6 +41,7 @@ export const IEEE_CSV_COLUMNS: { header: string; value: (p: IeeeCsvRow) => strin
       return by === 'IEEE_ID' ? 'IEEE ID' : by === 'EMAIL' ? 'Email' : '';
     },
   },
+  { header: 'IEEE checked by', value: (p) => current(p)?.checkedBy ?? '' },
   {
     header: 'IEEE checked at',
     value: (p) => {
@@ -53,5 +61,5 @@ export const IEEE_CSV_COLUMNS: { header: string; value: (p: IeeeCsvRow) => strin
 /** The stored result, if it still describes the participant. */
 function current(p: IeeeCsvRow) {
   const state = evaluateIeee(p).state;
-  return state === 'UNVERIFIED' || state === 'NOT_APPLICABLE' ? null : p.ieeeVerification;
+  return hasIeeeResult(state) ? p.ieeeVerification : null;
 }

@@ -11,7 +11,7 @@ import {
   type PaymentProofStatus,
   type PaymentState,
 } from '@/lib/payment';
-import { deriveIeeeState, evaluateIeee, type IeeeVerification } from '@/lib/ieee-verification';
+import { deriveIeeeState, evaluateIeee, isRasMember, type IeeeVerification } from '@/lib/ieee-verification';
 import { IeeeSection, IeeeStatusCell, useIeeeVerification } from './ieee-verify';
 
 type InternationalInfo = {
@@ -40,6 +40,8 @@ export type ParticipantRow = {
   banned: boolean;
   participantType: string;
   isRas: boolean;
+  /** The participant's own answer; separate from IEEE's verdict. */
+  careerStage: string | null;
   sb: string | null;
   country: string;
   memberships: Membership[];
@@ -74,11 +76,11 @@ type Filters = {
   ieee: IeeeFilter;
 };
 
-/** Any single row state, plus two groupings: everything that needs a human
- *  (NEEDS_ACTION), and verified rows carrying a note (NOTES). FAILED exists
- *  only during a session, since failures are never stored, and is offered
- *  only while there are some. */
-type IeeeFilter = 'ALL' | 'NEEDS_ACTION' | 'NOTES' | 'FAILED' | ReturnType<typeof deriveIeeeState>;
+/** Any single row state, plus two groupings: RAS members (RAS), and verified
+ *  members whose result carries a note (NOTES).
+ *  FAILED exists only during a session, since failures are never stored, and
+ *  is offered only while there are some. */
+type IeeeFilter = 'ALL' | 'RAS' | 'NOTES' | 'FAILED' | ReturnType<typeof deriveIeeeState>;
 
 const NO_FILTERS: Filters = {
   query: '',
@@ -138,8 +140,8 @@ function matches(p: ParticipantRow, filters: Filters, haystack: string, failures
 function matchesIeee(p: ParticipantRow, filter: IeeeFilter, failures: Record<string, string>) {
   const state = deriveIeeeState(p);
   switch (filter) {
-    case 'NEEDS_ACTION':
-      return state === 'NOT_RAS' || state === 'NOT_IEEE';
+    case 'RAS':
+      return state === 'VERIFIED' && p.ieeeVerification !== null && isRasMember(p.ieeeVerification);
     case 'NOTES':
       return state === 'VERIFIED' && evaluateIeee(p).issues.length > 0;
     case 'FAILED':
@@ -260,12 +262,12 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
             onChange={(v) => set('ieee', v as IeeeFilter)}
             options={[
               { value: 'ALL', label: 'Any IEEE check' },
-              { value: 'NEEDS_ACTION', label: 'Needs action' },
               { value: 'VERIFIED', label: 'Verified' },
+              { value: 'RAS', label: 'Verified · RAS' },
               { value: 'NOTES', label: 'Verified with a note' },
               { value: 'NOT_RAS', label: 'Not RAS' },
               { value: 'NOT_IEEE', label: 'Not IEEE' },
-              { value: 'UNVERIFIED', label: 'Unverified' },
+              { value: 'UNVERIFIED', label: 'No verification yet' },
               // Also kept while selected, so the dropdown never shows an
               // option that isn't the one applied.
               ...(ieee.failedIds.length > 0 || filters.ieee === 'FAILED'
@@ -487,6 +489,7 @@ function ParticipantDetailModal({
             <Detail label="Country" value={p.country} />
             <Detail label="Student Branch" value={p.sb ?? '—'} />
             <Detail label="IEEE ID" value={p.ieeeId?.toString() ?? '—'} />
+            <Detail label="Career stage" value={CAREER_STAGE_LABELS[p.careerStage ?? ''] ?? '—'} />
             <Detail label="Competition Team" value={teamLabel(p, 'COMPETITION')} />
             <Detail label="Challenge Team" value={teamLabel(p, 'CHALLENGE')} />
             <Detail label="Hackathon Team" value={teamLabel(p, 'FABLAB')} />
@@ -520,6 +523,12 @@ function ParticipantDetailModal({
     </div>
   );
 }
+
+/** The participant's own answer, as they chose it on registration. */
+const CAREER_STAGE_LABELS: Record<string, string> = {
+  Student: 'Student',
+  YoungProfessional: 'Young Professional',
+};
 
 /** "Name (CODE) — Leader" for the participant's team in one activity, or "—". */
 function teamLabel(p: ParticipantRow, activity: Membership['activity']) {

@@ -822,18 +822,6 @@ button {
   box-shadow: inset 3px 0 0 #c9a227;
 }
 
-.pay-amount-mismatch {
-  color: #f59e0b;
-  font-variant-numeric: tabular-nums;
-}
-
-.pay-amount-was {
-  display: block;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.35);
-  text-decoration: line-through;
-}
-
 .pay-actions {
   display: flex;
   gap: 8px;

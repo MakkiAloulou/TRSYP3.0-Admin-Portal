@@ -82,15 +82,6 @@ export function isCashWithoutReceipt(proof: Pick<PaymentProofRow, 'method' | 'ha
   return proof.method === 'CASH' && !proof.hasFile;
 }
 
-/**
- * The snapshot is the fee at submission time; currentFee is what the
- * participant owes now. They drift apart when someone joins a team or changes
- * membership tier after submitting — exactly the case a reviewer must catch.
- */
-export function hasFeeMismatch(proof: Pick<PaymentProofRow, 'amountSnapshot' | 'currentFee'>) {
-  return proof.amountSnapshot !== proof.currentFee;
-}
-
 export function formatAmount(amount: number) {
   return `${amount} TND`;
 }
