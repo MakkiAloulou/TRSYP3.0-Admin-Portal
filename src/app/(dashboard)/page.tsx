@@ -1,4 +1,6 @@
 import { prisma } from '@/lib/prisma';
+import { apiFetch } from '@/lib/trsyp-api';
+import { latestProofPerParticipant, type PaymentProofRow } from '@/lib/payment';
 import { ChartCard, DonutBreakdown, RankedBars, ShareBar, StatTile, TrendChart, VIZ, type TrendPoint } from './charts';
 import { RegionMap } from './region-map';
 import { regionForBranch } from '@/lib/student-branch-region';
@@ -31,14 +33,13 @@ const VISA_ORDER = [
 ] as const;
 
 export default async function DashboardPage() {
-  const [participants, teams, visaApplications] = await Promise.all([
+  const [participants, teams, visaApplications, proofs] = await Promise.all([
     prisma.participant.findMany({
       select: {
         ieeeId: true,
         isRas: true,
         participantType: true,
         gender: true,
-        paid: true,
         isInternational: true,
         banned: true,
         sb: true,
@@ -68,10 +69,18 @@ export default async function DashboardPage() {
       select: { activity: true, size: true, _count: { select: { memberships: true } } },
     }),
     prisma.visaApplication.findMany({ select: { status: true } }),
+    apiFetch<{ data: PaymentProofRow[]; total: number }>('/payment/admin/proofs?take=1000'),
   ]);
 
   const total = participants.length;
-  const paid = participants.filter((p) => p.paid).length;
+  // Same rule as the Payments page: only a participant's newest proof counts.
+  const pendingProofs = proofs.ok
+    ? latestProofPerParticipant(proofs.data.data).filter((p) => p.status === 'PENDING')
+    : [];
+  const oldestPending = pendingProofs.reduce<string | null>(
+    (min, p) => (min === null || Date.parse(p.createdAt) < Date.parse(min) ? p.createdAt : min),
+    null,
+  );
   const international = participants.filter((p) => p.isInternational).length;
   const unverified = participants.filter((p) => !p.user.active).length;
 
@@ -143,10 +152,16 @@ export default async function DashboardPage() {
       <div className="viz-kpi-row">
         <StatTile label="Participants" value={total} sub={`${unverified} unverified`} />
         <StatTile
-          label="Paid"
-          value={paid}
-          sub={`${sharePct(paid, total)} of registrations`}
-          accent="var(--viz-1)"
+          label="Proofs to review"
+          value={proofs.ok ? pendingProofs.length : '—'}
+          sub={
+            !proofs.ok
+              ? 'Could not load the queue'
+              : oldestPending
+                ? oldestWaiting(oldestPending)
+                : 'Queue clear.'
+          }
+          accent={pendingProofs.length > 0 ? STATUS.warning : undefined}
         />
         <StatTile
           label="Competition teams"
@@ -275,6 +290,17 @@ function buildTrend(dates: Date[]): TrendPoint[] {
   }
 
   return points;
+}
+
+/** "Oldest waiting 12 minutes.", "…5 hours.", "…3 days.": how long the oldest proof has waited. */
+function oldestWaiting(iso: string) {
+  const minutes = Math.floor((Date.now() - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return 'Oldest sent just now.';
+  if (minutes < 60) return `Oldest waiting ${minutes === 1 ? '1 minute' : `${minutes} minutes`}.`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Oldest waiting ${hours === 1 ? '1 hour' : `${hours} hours`}.`;
+  const days = Math.floor(hours / 24);
+  return `Oldest waiting ${days === 1 ? '1 day' : `${days} days`}.`;
 }
 
 function formatDay(date: Date) {
