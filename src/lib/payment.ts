@@ -82,6 +82,27 @@ export function isCashWithoutReceipt(proof: Pick<PaymentProofRow, 'method' | 'ha
   return proof.method === 'CASH' && !proof.hasFile;
 }
 
+/**
+ * Registration fees in TND, by role and membership tier. A copy of the
+ * backend's registration/domain/fees.ts (itself mirrored in the main site's
+ * lib/fees.ts) — change all three together.
+ */
+const FEES = {
+  VISITOR: { IEEE_RAS: 170, IEEE: 175, NON_IEEE: 185 },
+  CHALLENGER: { IEEE_RAS: 175, IEEE: 180, NON_IEEE: 190 },
+} as const;
+
+/**
+ * What a participant owes right now, priced exactly as the backend's feeFor():
+ * a challenger is anyone on a team in any activity, and RAS only discounts
+ * IEEE members.
+ */
+export function feeFor(participant: { participantType: string; isRas: boolean; memberships: unknown[] }) {
+  const role = participant.memberships.length > 0 ? 'CHALLENGER' : 'VISITOR';
+  const tier = participant.participantType === 'NonIEEE' ? 'NON_IEEE' : participant.isRas ? 'IEEE_RAS' : 'IEEE';
+  return FEES[role][tier];
+}
+
 export function formatAmount(amount: number) {
   return `${amount} TND`;
 }

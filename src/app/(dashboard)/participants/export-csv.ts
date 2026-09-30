@@ -1,4 +1,5 @@
 import type { ParticipantRow } from './participants-table';
+import { feeFor } from '@/lib/payment';
 import { IEEE_CSV_COLUMNS } from './ieee-csv';
 
 /**
@@ -17,6 +18,7 @@ const COLUMNS: { header: string; value: (p: ParticipantRow) => string }[] = [
   ...IEEE_CSV_COLUMNS,
   { header: 'Student branch', value: (p) => p.sb ?? '' },
   { header: 'Country', value: (p) => p.country },
+  { header: 'Fee (TND)', value: (p) => feeFor(p).toString() },
   { header: 'Paid', value: (p) => yesNo(p.paid) },
   { header: 'Banned', value: (p) => yesNo(p.banned) },
   { header: 'Account verified', value: (p) => yesNo(p.user.active) },
