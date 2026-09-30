@@ -1028,10 +1028,13 @@ button {
   font-size: 12.5px;
 }
 
-.pay-skeleton-row {
-  height: 44px;
+/* ─── Loading skeletons ───────────────────────────────
+   Shared by every loading.tsx: blocks that stand in for the page's real
+   layout, so content lands where the placeholder was. */
+
+.skeleton {
+  display: block;
   border-radius: 8px;
-  margin-bottom: 8px;
   background: linear-gradient(
     90deg,
     rgba(255, 255, 255, 0.03) 25%,
@@ -1039,10 +1042,10 @@ button {
     rgba(255, 255, 255, 0.03) 63%
   );
   background-size: 400% 100%;
-  animation: paySkeleton 1.3s linear infinite;
+  animation: skeletonShimmer 1.3s linear infinite;
 }
 
-@keyframes paySkeleton {
+@keyframes skeletonShimmer {
   from {
     background-position: 100% 50%;
   }
@@ -1053,18 +1056,27 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pay-skeleton-row {
+  .skeleton {
     animation: none;
   }
 }
 
-/* Most navigations finish in well under 200ms; holding the placeholder back
-   that long keeps a fast load from flashing a skeleton at all. */
-.pay-loading-late {
-  animation: payLoadingLate 150ms ease 200ms both;
+.skeleton-row {
+  height: 44px;
+  margin-bottom: 8px;
 }
 
-@keyframes payLoadingLate {
+.skeleton-text {
+  height: 12px;
+}
+
+/* Most navigations finish in well under 200ms; holding the placeholder back
+   that long keeps a fast load from flashing a skeleton at all. */
+.loading-late {
+  animation: loadingLate 150ms ease 200ms both;
+}
+
+@keyframes loadingLate {
   from {
     opacity: 0;
   }
