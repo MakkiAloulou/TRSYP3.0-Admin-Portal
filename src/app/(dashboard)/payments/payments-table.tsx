@@ -15,6 +15,8 @@ import {
   type PaymentProofRow,
   type PaymentProofStatus,
 } from '@/lib/payment';
+import { useEscapeKey } from '@/lib/use-escape-key';
+import { ModalPresence } from '../modal-presence';
 import { approveProof, getReceiptUrl, rejectProof } from './actions';
 
 type Props = {
@@ -46,9 +48,12 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
   const [rejecting, setRejecting] = useState<PaymentProofRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  // The row a review just changed, tinted briefly so the reviewer sees which one moved.
+  const [justReviewedId, setJustReviewedId] = useState<string | null>(null);
 
   function applyUpdate(updated: PaymentProofRow) {
     setRows((current) => current.map((row) => (row.id === updated.id ? updated : row)));
+    setJustReviewedId(updated.id);
   }
 
   /** A proof someone else already reviewed means our list is stale: tell the
@@ -157,6 +162,7 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
                 busy={busyId === proof.id}
                 error={rowError?.id === proof.id ? rowError.message : null}
                 focused={proof.id === focusProofId}
+                justReviewed={proof.id === justReviewedId}
                 onView={() => handleViewReceipt(proof)}
                 onApprove={() => setConfirming(proof)}
                 onReject={() => setRejecting(proof)}
@@ -168,25 +174,31 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
 
       <Pagination total={total} skip={skip} take={take} status={status} count={rows.length} />
 
-      {receipt && <ReceiptModal proof={receipt.proof} url={receipt.url} onClose={() => setReceipt(null)} />}
+      <ModalPresence>
+        {receipt && <ReceiptModal proof={receipt.proof} url={receipt.url} onClose={() => setReceipt(null)} />}
+      </ModalPresence>
 
-      {confirming && (
-        <ApproveModal
-          proof={confirming}
-          busy={busyId === confirming.id}
-          onConfirm={() => handleApprove(confirming)}
-          onClose={() => setConfirming(null)}
-        />
-      )}
+      <ModalPresence>
+        {confirming && (
+          <ApproveModal
+            proof={confirming}
+            busy={busyId === confirming.id}
+            onConfirm={() => handleApprove(confirming)}
+            onClose={() => setConfirming(null)}
+          />
+        )}
+      </ModalPresence>
 
-      {rejecting && (
-        <RejectModal
-          proof={rejecting}
-          busy={busyId === rejecting.id}
-          onSubmit={(reason) => handleReject(rejecting, reason)}
-          onClose={() => setRejecting(null)}
-        />
-      )}
+      <ModalPresence>
+        {rejecting && (
+          <RejectModal
+            proof={rejecting}
+            busy={busyId === rejecting.id}
+            onSubmit={(reason) => handleReject(rejecting, reason)}
+            onClose={() => setRejecting(null)}
+          />
+        )}
+      </ModalPresence>
     </>
   );
 }
@@ -196,6 +208,7 @@ function ProofRow({
   busy,
   error,
   focused,
+  justReviewed,
   onView,
   onApprove,
   onReject,
@@ -204,6 +217,7 @@ function ProofRow({
   busy: boolean;
   error: string | null;
   focused: boolean;
+  justReviewed: boolean;
   onView: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -221,6 +235,7 @@ function ProofRow({
       <tr
         ref={ref}
         className={cashInPerson ? 'pay-row--cash' : undefined}
+        data-reviewed={justReviewed ? proof.status : undefined}
         style={{
           borderBottom: error ? 'none' : '1px solid rgba(255,255,255,0.05)',
           background: focused ? 'rgba(0,232,122,0.06)' : undefined,
@@ -369,6 +384,7 @@ function Pagination({
 
 function ReceiptModal({ proof, url, onClose }: { proof: PaymentProofRow; url: string; onClose: () => void }) {
   const isPdf = isPdfReceipt(proof);
+  useEscapeKey(onClose);
 
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
@@ -415,6 +431,8 @@ function ApproveModal({
   onConfirm: () => void;
   onClose: () => void;
 }) {
+  useEscapeKey(busy ? null : onClose);
+
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
@@ -462,6 +480,7 @@ function RejectModal({
 }) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  useEscapeKey(busy ? null : onClose);
 
   async function submit() {
     // Mirrors the backend's own bounds so an invalid reason never round-trips.

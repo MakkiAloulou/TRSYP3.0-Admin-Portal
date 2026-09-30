@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useEscapeKey } from '@/lib/use-escape-key';
+import { ModalPresence } from '../modal-presence';
 import { buildParticipantsCsv, downloadCsv, participantsCsvFilename } from './export-csv';
 import {
   PAYMENT_STATES,
@@ -340,17 +342,19 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
         </table>
       </div>
 
-      {selected && (
-        <ParticipantDetailModal participant={selected} onClose={() => setSelectedId(null)}>
-          <IeeeSection
-            participant={selected}
-            activity={ieee.activity[selected.id]}
-            failure={ieee.failures[selected.id]}
-            busy={ieee.busy}
-            onRecheck={() => ieee.recheck(selected.id)}
-          />
-        </ParticipantDetailModal>
-      )}
+      <ModalPresence>
+        {selected && (
+          <ParticipantDetailModal participant={selected} onClose={() => setSelectedId(null)}>
+            <IeeeSection
+              participant={selected}
+              activity={ieee.activity[selected.id]}
+              failure={ieee.failures[selected.id]}
+              busy={ieee.busy}
+              onRecheck={() => ieee.recheck(selected.id)}
+            />
+          </ParticipantDetailModal>
+        )}
+      </ModalPresence>
     </>
   );
 }
@@ -457,6 +461,8 @@ function ParticipantDetailModal({
   /** Extra sections rendered after the participant's own details. */
   children?: React.ReactNode;
 }) {
+  useEscapeKey(onClose);
+
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
       <div className="admin-modal" onClick={(e) => e.stopPropagation()}>

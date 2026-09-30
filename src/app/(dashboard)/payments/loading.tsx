@@ -6,12 +6,12 @@ export default function PaymentsLoading() {
     <div className="space-y-4">
       <div>
         <h2 className="admin-heading text-lg text-white">Payments</h2>
-        <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
+        <p className="pay-loading-late text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
           Loading queue&hellip;
         </p>
       </div>
 
-      <div className="admin-card p-4">
+      <div className="admin-card pay-loading-late p-4">
         {Array.from({ length: 6 }).map((_, row) => (
           <div
             key={row}
