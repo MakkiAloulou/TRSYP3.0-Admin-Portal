@@ -1,85 +1,197 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useLayoutEffect, useRef } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 
-const NAV_LINKS = [
-  { href: '/', label: 'Overview' },
-  { href: '/participants', label: 'Participants' },
-  { href: '/payments', label: 'Payments' },
-  { href: '/teams/competition', label: 'Competition' },
-  { href: '/teams/challenge', label: 'Challenge' },
-  { href: '/teams/hackathon', label: 'Hackathon' },
-] as const;
+type Section = {
+  href: string;
+  label: string;
+  icon: keyof typeof ICONS;
+  isActive: (pathname: string) => boolean;
+};
 
-export function DashboardHeader({ adminName }: { adminName: string }) {
-  const [open, setOpen] = useState(false);
+/**
+ * Four sections. The three team activities live under Teams, with their own
+ * tabs on those pages (teams/teams-tabs.tsx), which keeps the bar short
+ * enough to be a phone's bottom tab bar as it is.
+ */
+const SECTIONS: Section[] = [
+  { href: '/', label: 'Overview', icon: 'overview', isActive: (p) => p === '/' },
+  { href: '/participants', label: 'Participants', icon: 'participants', isActive: (p) => p.startsWith('/participants') },
+  { href: '/payments', label: 'Payments', icon: 'payments', isActive: (p) => p.startsWith('/payments') },
+  { href: '/teams/competition', label: 'Teams', icon: 'teams', isActive: (p) => p.startsWith('/teams') },
+];
+
+/**
+ * The top bar (logo, and the sections centred on wider screens) plus, on
+ * phones, a floating dock with the same four sections in thumb reach: icons,
+ * with the current one opened out into a lit capsule carrying its label.
+ */
+export function DashboardHeader() {
   const pathname = usePathname();
+  const linksRef = useRef<HTMLElement>(null);
+  const underlineRef = useRef<HTMLSpanElement>(null);
+  // The first placement snaps; later ones slide, so the line never sweeps
+  // in from the edge on page load.
+  const placedRef = useRef(false);
 
-  const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
+  /**
+   * Puts the lit line under `target`: the current page, or — as a fainter
+   * preview — the link being hovered or focused. Written straight to the
+   * element, so following the pointer never re-renders the header.
+   */
+  const moveUnderline = useCallback((target: HTMLElement | null, preview: boolean) => {
+    const underline = underlineRef.current;
+    if (!underline) return;
+    if (!target || target.offsetWidth === 0) {
+      underline.removeAttribute('data-visible');
+      return;
+    }
+    if (!placedRef.current) underline.setAttribute('data-instant', '');
+    underline.style.width = `${target.offsetWidth}px`;
+    underline.style.transform = `translateX(${target.offsetLeft}px)`;
+    underline.setAttribute('data-visible', '');
+    underline.toggleAttribute('data-preview', preview);
+    if (!placedRef.current) {
+      placedRef.current = true;
+      requestAnimationFrame(() => underline.removeAttribute('data-instant'));
+    }
+  }, []);
+
+  const activeLink = useCallback(
+    () => linksRef.current?.querySelector<HTMLElement>('[data-active]') ?? null,
+    [],
+  );
+
+  useLayoutEffect(() => {
+    const links = linksRef.current;
+    if (!links) return;
+    const home = () => moveUnderline(activeLink(), false);
+    home();
+    // Fonts arriving or the window resizing change the links' widths.
+    const observer = new ResizeObserver(home);
+    observer.observe(links);
+    return () => observer.disconnect();
+  }, [pathname, moveUnderline, activeLink]);
+
+  // Hover or keyboard focus previews a link; leaving returns to the page.
+  function preview(event: React.SyntheticEvent) {
+    const link = (event.target as HTMLElement).closest<HTMLElement>('.nav-link');
+    if (link) moveUnderline(link, !link.hasAttribute('data-active'));
+  }
+
+  function settle() {
+    moveUnderline(activeLink(), false);
+  }
 
   return (
-    <header className="admin-header">
-      <div className="admin-header-inner">
-        <div className="admin-header-left">
-          <Link className="navbar-logo" href="/">
+    <>
+      <header className="nav">
+        <div className="nav-inner">
+          <Link className="nav-logo" href="/" aria-label="TRSYP 3.0 admin — overview">
             <Image
               src="/trsyp-logo.png"
-              loading="eager"
               alt="TRSYP 3.0"
               width={100}
               height={40}
               priority
-              style={{ height: '40px', width: 'auto', objectFit: 'contain' }}
+              className="nav-logo-img"
             />
           </Link>
-          <nav className="admin-nav admin-nav--desktop">
-            {NAV_LINKS.map((link) => (
-              <Link
-                key={link.href}
-                href={link.href}
-                className="transition-colors hover:text-white"
-                aria-current={isActive(link.href) ? 'page' : undefined}
-                data-active={isActive(link.href) ? '' : undefined}
-              >
-                {link.label}
-              </Link>
+
+          <nav
+            className="nav-links"
+            ref={linksRef}
+            aria-label="Main"
+            onMouseOver={preview}
+            onMouseLeave={settle}
+            onFocus={preview}
+            onBlur={settle}
+          >
+            {SECTIONS.map((section) => (
+              <SectionLink key={section.href} section={section} pathname={pathname} className="nav-link" />
             ))}
+            <span className="nav-underline" ref={underlineRef} aria-hidden />
           </nav>
         </div>
+      </header>
 
-        <div className="admin-header-right">
-          <span className="admin-header-name">{adminName}</span>
-          <button
-            type="button"
-            className="admin-nav-toggle"
-            aria-label="Toggle menu"
-            aria-expanded={open}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
-        </div>
-      </div>
-
-      <nav className={`admin-nav admin-nav--mobile${open ? ' is-open' : ''}`}>
-        <span className="admin-nav--mobile-name">{adminName}</span>
-        {NAV_LINKS.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            onClick={() => setOpen(false)}
-            aria-current={isActive(link.href) ? 'page' : undefined}
-            data-active={isActive(link.href) ? '' : undefined}
-          >
-            {link.label}
-          </Link>
+      {/* Phones only (CSS): the same sections, where a thumb reaches them. */}
+      <nav className="tabbar" aria-label="Main">
+        {SECTIONS.map((section) => (
+          <SectionLink key={section.href} section={section} pathname={pathname} className="tabbar-tab" />
         ))}
       </nav>
-    </header>
+    </>
+  );
+}
+
+function SectionLink({ section, pathname, className }: { section: Section; pathname: string; className: string }) {
+  const active = section.isActive(pathname);
+  return (
+    <Link
+      href={section.href}
+      className={className}
+      aria-current={active ? 'page' : undefined}
+      data-active={active ? '' : undefined}
+    >
+      <NavIcon name={section.icon} />
+      <span>{section.label}</span>
+    </Link>
+  );
+}
+
+/** One stroke weight and corner style across the set. */
+const ICONS = {
+  overview: (
+    <>
+      <rect x="3.5" y="3.5" width="7" height="7" rx="1.75" />
+      <rect x="13.5" y="3.5" width="7" height="7" rx="1.75" />
+      <rect x="3.5" y="13.5" width="7" height="7" rx="1.75" />
+      <rect x="13.5" y="13.5" width="7" height="7" rx="1.75" />
+    </>
+  ),
+  participants: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20a6.5 6.5 0 0 1 13 0" />
+      <path d="M16 4.7a3.5 3.5 0 0 1 0 6.6" />
+      <path d="M18.5 14.4a6.5 6.5 0 0 1 3 5.6" />
+    </>
+  ),
+  payments: (
+    <>
+      <rect x="2.5" y="5" width="19" height="14" rx="2.5" />
+      <path d="M2.5 10h19" />
+      <path d="M6.5 15h4" />
+    </>
+  ),
+  teams: (
+    <>
+      <path d="M8 4h8v5a4 4 0 0 1-8 0z" />
+      <path d="M8 6H5.5a2.5 2.5 0 0 0 2.8 4" />
+      <path d="M16 6h2.5a2.5 2.5 0 0 1-2.8 4" />
+      <path d="M12 13v4" />
+      <path d="M8.5 20h7" />
+    </>
+  ),
+};
+
+function NavIcon({ name }: { name: keyof typeof ICONS }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      {ICONS[name]}
+    </svg>
   );
 }

@@ -15,9 +15,10 @@ export default async function DashboardLayout({ children }: { children: React.Re
     redirect('/login');
   }
 
+  // Only whether they are an admin: the header no longer shows their name.
   const admin = await prisma.admin.findUnique({
     where: { supabaseId: userId },
-    select: { id: true, name: true, lastName: true, position: true },
+    select: { id: true },
   });
 
   if (!admin) {
@@ -26,8 +27,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--color-bg)' }}>
-      <DashboardHeader adminName={`${admin.name} ${admin.lastName}`} />
-      <main className="mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">{children}</main>
+      <DashboardHeader />
+      <main className="dash-main mx-auto max-w-6xl px-4 py-6 sm:px-8 sm:py-8">{children}</main>
     </div>
   );
 }
