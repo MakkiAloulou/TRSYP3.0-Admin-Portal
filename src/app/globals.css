@@ -480,8 +480,10 @@ button {
     display: none;
   }
 
+  /* The links live in the dock, so the logo has the row to itself: centred. */
   .nav-inner {
     display: flex;
+    justify-content: center;
     height: 56px;
     padding: 0 16px;
   }
