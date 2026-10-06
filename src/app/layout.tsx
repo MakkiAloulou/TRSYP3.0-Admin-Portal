@@ -2,7 +2,8 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'TRSYP 3.0 — Admin Dashboard',
+  // Each page names itself, so several open tabs can be told apart.
+  title: { default: 'TRSYP 3.0 — Admin Dashboard', template: '%s · TRSYP Admin' },
   description: 'Admin dashboard for TRSYP 3.0',
 };
 

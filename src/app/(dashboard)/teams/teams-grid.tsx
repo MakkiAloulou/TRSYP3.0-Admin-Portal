@@ -1,27 +1,6 @@
-import type { FablabAxis } from '@prisma/client';
-
-type TeamMemberSummary = {
-  id: string;
-  user: { name: string; lastName: string };
-};
-
-export type TeamRow = {
-  id: string;
-  name: string;
-  code: string;
-  size: number;
-  leaderId: string;
-  /** FABLAB teams only — null everywhere else. */
-  axis: FablabAxis | null;
-  submissionUrl: string | null;
-  submittedAt: string | null;
-  members: TeamMemberSummary[];
-};
-
-export const FABLAB_AXES: { value: FablabAxis; label: string }[] = [
-  { value: 'SAMPLE_PREPARATION', label: 'Automated Sample Preparation' },
-  { value: 'WEIGHING_DOSING', label: 'Automated Weighing & Dosing Station' },
-];
+import { PAYMENT_STATE_COLORS, PAYMENT_STATE_LABELS } from '@/lib/payment';
+import { PaymentIcon } from '../payment-icon';
+import type { TeamRow } from './team-types';
 
 /**
  * Renders one activity's teams. The hackathon's axis and concept submission
@@ -38,86 +17,97 @@ export function TeamsGrid({ teams, showFablab = false }: { teams: TeamRow[]; sho
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {teams.map((team) => {
-        const emptySlots = Math.max(team.size - team.members.length, 0);
-
-        return (
-          <div key={team.id} className="admin-card flex flex-col p-5">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <span className="min-w-0">
-                <h3 className="admin-heading truncate text-sm text-white">{team.name}</h3>
-                <p className="mt-0.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
-                  Code: {team.code}
-                </p>
-              </span>
-
-              <span
-                className={`admin-badge admin-badge--${team.members.length === team.size ? 'pink' : 'green'} shrink-0`}
-              >
-                {team.members.length}/{team.size}
-              </span>
-            </div>
-
-            <div className="space-y-1.5">
-              {team.members.map((member) => (
-                <div
-                  key={member.id}
-                  className="flex items-center justify-between rounded-md px-3 py-1.5 text-sm"
-                  style={{ background: 'rgba(255,255,255,0.03)' }}
-                >
-                  <span className="truncate text-white/80">
-                    {member.user.name} {member.user.lastName}
-                  </span>
-                  {member.id === team.leaderId && (
-                    <span
-                      className="ml-2 shrink-0 text-[10px] font-medium uppercase"
-                      style={{ color: 'var(--color-green)', letterSpacing: '0.08em' }}
-                    >
-                      Leader
-                    </span>
-                  )}
-                </div>
-              ))}
-
-              {Array.from({ length: emptySlots }).map((_, i) => (
-                <div
-                  key={`empty-${i}`}
-                  className="rounded-md px-3 py-1.5 text-sm"
-                  style={{
-                    border: '1px dashed rgba(255,255,255,0.12)',
-                    color: 'rgba(255,255,255,0.25)',
-                  }}
-                >
-                  Empty spot
-                </div>
-              ))}
-            </div>
-
-            {showFablab && <FablabDetails team={team} />}
-          </div>
-        );
-      })}
+      {teams.map((team) => (
+        <TeamCard key={team.id} team={team} showFablab={showFablab} />
+      ))}
     </div>
   );
 }
 
-function FablabDetails({ team }: { team: TeamRow }) {
-  const axisIndex = FABLAB_AXES.findIndex((a) => a.value === team.axis);
+function TeamCard({ team, showFablab }: { team: TeamRow; showFablab: boolean }) {
+  const emptySlots = Math.max(team.size - team.members.length, 0);
+  const full = team.members.length >= team.size;
+  const paid = team.members.filter((m) => m.payment === 'PAID').length;
+  const allPaid = team.members.length > 0 && paid === team.members.length;
 
   return (
-    <div className="mt-4 space-y-1.5 border-t pt-4 text-xs" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
-      <div className="flex items-center justify-between gap-3">
-        <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          Axis
+    <div className="admin-card flex flex-col p-5">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <span className="min-w-0">
+          <h3 className="admin-heading truncate text-sm text-white" title={team.name}>
+            {team.name}
+          </h3>
+          <p className="mt-0.5 text-xs" style={{ color: 'rgba(255,255,255,0.35)' }}>
+            Code: {team.code} ·{' '}
+            <span style={allPaid ? { color: 'var(--color-green)' } : undefined}>
+              {paid}/{team.members.length} paid
+            </span>
+          </p>
         </span>
-        {axisIndex >= 0 ? (
-          <span className="truncate text-white/80" title={FABLAB_AXES[axisIndex].label}>
-            {axisIndex + 1} · {FABLAB_AXES[axisIndex].label}
-          </span>
-        ) : (
-          <span style={{ color: 'rgba(255,255,255,0.25)' }}>Not chosen</span>
-        )}
+
+        {/* Full is the goal, so it reads green; a team still filling is neutral. */}
+        <span
+          className={`admin-badge admin-badge--${full ? 'green' : 'gray'} shrink-0`}
+          title={full ? 'Team is full' : `${emptySlots} spot${emptySlots === 1 ? '' : 's'} left`}
+        >
+          {team.members.length}/{team.size}
+        </span>
       </div>
+
+      <div className="space-y-1.5">
+        {team.members.map((member) => (
+          <div
+            key={member.id}
+            className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm"
+            style={{ background: 'rgba(255,255,255,0.03)' }}
+          >
+            <span
+              className="pay-mark pay-mark--sm shrink-0"
+              style={{ '--pay-mark': PAYMENT_STATE_COLORS[member.payment] } as React.CSSProperties}
+              title={PAYMENT_STATE_LABELS[member.payment]}
+              role="img"
+              aria-label={PAYMENT_STATE_LABELS[member.payment]}
+            >
+              <PaymentIcon state={member.payment} size={12} />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-white/80">
+              {member.user.name} {member.user.lastName}
+            </span>
+            {member.id === team.leaderId && (
+              <span
+                className="shrink-0 text-[10px] font-medium uppercase"
+                style={{ color: 'var(--color-green)', letterSpacing: '0.08em' }}
+              >
+                Leader
+              </span>
+            )}
+          </div>
+        ))}
+
+        {Array.from({ length: emptySlots }).map((_, i) => (
+          <div
+            key={`empty-${i}`}
+            className="rounded-md py-1.5 pr-2 pl-10 text-sm"
+            style={{
+              border: '1px dashed rgba(255,255,255,0.12)',
+              color: 'rgba(255,255,255,0.25)',
+            }}
+          >
+            Empty spot
+          </div>
+        ))}
+      </div>
+
+      {showFablab && <FablabDetails team={team} />}
+    </div>
+  );
+}
+
+/** The concept submission. The axis isn't repeated here: the hackathon page
+ *  already groups teams under their axis. */
+function FablabDetails({ team }: { team: TeamRow }) {
+  return (
+    <div className="mt-4 border-t pt-4 text-xs" style={{ borderColor: 'rgba(255,255,255,0.06)' }}>
       <div className="flex items-center justify-between gap-3">
         <span className="shrink-0" style={{ color: 'rgba(255,255,255,0.4)' }}>
           Submission

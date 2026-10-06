@@ -4,13 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
-  METHOD_LABELS,
   PAYMENT_PROOF_STATUSES,
   PAYMENT_STATE_COLORS,
   REJECTION_REASON_MAX,
   STATUS_LABELS,
   formatAmount,
-  isCashWithoutReceipt,
   isPdfReceipt,
   validateRejectionReason,
   type PaymentProofRow,
@@ -48,6 +46,8 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
   }
 
   const [staleNotice, setStaleNotice] = useState<string | null>(null);
+  // A quiet confirmation, e.g. once the viewer has worked through the page.
+  const [notice, setNotice] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<{ proof: PaymentProofRow; url: string } | null>(null);
   const [confirming, setConfirming] = useState<PaymentProofRow | null>(null);
   const [rejecting, setRejecting] = useState<PaymentProofRow | null>(null);
@@ -71,21 +71,86 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
     router.refresh();
   }
 
+  /** Opens `proof` in the viewer. Returns an error message, or null. */
+  async function loadReceipt(proof: PaymentProofRow) {
+    // Signed URLs expire after 60s, so they are fetched per proof, never upfront.
+    const result = await getReceiptUrl(proof.id);
+    if (!result.ok) return result.message;
+    setReceipt({ proof, url: result.url });
+    return null;
+  }
+
   async function handleViewReceipt(proof: PaymentProofRow) {
     setBusyId(proof.id);
     setRowError(null);
+    setNotice(null);
     try {
-      // Signed URLs expire after 60s, so they are fetched per click, never upfront.
-      const result = await getReceiptUrl(proof.id);
-      if (!result.ok) {
-        setRowError({ id: proof.id, message: result.message });
-        return;
-      }
-      setReceipt({ proof, url: result.url });
+      const message = await loadReceipt(proof);
+      if (message) setRowError({ id: proof.id, message });
     } finally {
       setBusyId(null);
     }
   }
+
+  // The proofs the viewer can walk through: pending, with a receipt to read.
+  const reviewable = rows.filter((row) => row.status === 'PENDING' && row.hasFile);
+
+  /** Moves the viewer on from `fromId` — the next reviewable proof after it,
+   *  wrapping round — or closes it when none are left. */
+  async function advanceFrom(fromId: string) {
+    const index = rows.findIndex((row) => row.id === fromId);
+    const ordered = [...rows.slice(index + 1), ...rows.slice(0, Math.max(index, 0))];
+    const next = ordered.find((row) => row.status === 'PENDING' && row.hasFile && row.id !== fromId);
+
+    if (!next) {
+      setReceipt(null);
+      setNotice('Every proof on this page has been reviewed.');
+      return;
+    }
+
+    const message = await loadReceipt(next);
+    if (message) {
+      setReceipt(null);
+      setRowError({ id: next.id, message });
+    }
+  }
+
+  /** Approve or reject from the viewer, then move on. Returns an error to show
+   *  in the viewer, or null once handled. */
+  async function decideInViewer(proof: PaymentProofRow, decide: () => ReturnType<typeof approveProof>) {
+    setBusyId(proof.id);
+    try {
+      const result = await decide();
+      if (result.ok) {
+        applyUpdate(result.proof);
+        await advanceFrom(proof.id);
+        return null;
+      }
+      if (result.stale) {
+        setReceipt(null);
+        handleStale(result.message);
+        return null;
+      }
+      return result.message;
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  const reviewControls = (proof: PaymentProofRow) =>
+    proof.status === 'PENDING'
+      ? {
+          position: reviewable.findIndex((row) => row.id === proof.id) + 1,
+          total: reviewable.length,
+          busy: busyId === proof.id,
+          onApprove: () => decideInViewer(proof, () => approveProof(proof.id)),
+          onReject: (reason: string) => decideInViewer(proof, () => rejectProof(proof.id, reason)),
+          onSkip: () => {
+            setBusyId(proof.id);
+            void advanceFrom(proof.id).finally(() => setBusyId(null));
+          },
+        }
+      : undefined;
 
   async function handleApprove(proof: PaymentProofRow) {
     setBusyId(proof.id);
@@ -141,6 +206,18 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
         </div>
       )}
 
+      {notice && (
+        <div className="pay-banner pay-banner--ok mb-4">
+          <span aria-hidden>&#10003;</span>
+          <span>
+            {notice}
+            <button type="button" className="pay-link ml-2" onClick={() => setNotice(null)}>
+              Dismiss
+            </button>
+          </span>
+        </div>
+      )}
+
       <StatusFilters active={status} take={take} counts={counts} />
 
       <div className="admin-card mt-4 overflow-x-auto">
@@ -183,7 +260,10 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
                 justReviewed={proof.id === justReviewedId}
                 now={now}
                 onView={() => handleViewReceipt(proof)}
+                confirming={confirming?.id === proof.id}
                 onApprove={() => setConfirming(proof)}
+                onConfirmApprove={() => handleApprove(proof)}
+                onCancelApprove={() => setConfirming(null)}
                 onReject={() => setRejecting(proof)}
               />
             ))}
@@ -194,16 +274,12 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
       <Pagination total={total} skip={skip} take={take} status={status} count={rows.length} />
 
       <ModalPresence>
-        {receipt && <ReceiptModal proof={receipt.proof} url={receipt.url} onClose={() => setReceipt(null)} />}
-      </ModalPresence>
-
-      <ModalPresence>
-        {confirming && (
-          <ApproveModal
-            proof={confirming}
-            busy={busyId === confirming.id}
-            onConfirm={() => handleApprove(confirming)}
-            onClose={() => setConfirming(null)}
+        {receipt && (
+          <ReceiptModal
+            proof={receipt.proof}
+            url={receipt.url}
+            review={reviewControls(receipt.proof)}
+            onClose={() => setReceipt(null)}
           />
         )}
       </ModalPresence>
@@ -230,7 +306,10 @@ function ProofRow({
   justReviewed,
   now,
   onView,
+  confirming,
   onApprove,
+  onConfirmApprove,
+  onCancelApprove,
   onReject,
 }: {
   proof: PaymentProofRow;
@@ -240,17 +319,23 @@ function ProofRow({
   justReviewed: boolean;
   now: number;
   onView: () => void;
+  /** This row's Approve was clicked and waits for its in-place confirm. */
+  confirming: boolean;
   onApprove: () => void;
+  onConfirmApprove: () => void;
+  onCancelApprove: () => void;
   onReject: () => void;
 }) {
   const ref = useRef<HTMLTableRowElement>(null);
-  const cashInPerson = isCashWithoutReceipt(proof);
   const pending = proof.status === 'PENDING';
   const hasReason = proof.status === 'REJECTED' && Boolean(proof.rejectionReason);
 
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [focused]);
+
+  // Escape backs out of a pending confirm, as it does in the viewer.
+  useEscapeKey(confirming && !busy ? onCancelApprove : null);
 
   return (
     <>
@@ -277,20 +362,15 @@ function ProofRow({
           </div>
         </Td>
         <Td className="proof-cell-fee">
-          <div className="text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>
+          <span className="text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>
             {formatAmount(proof.currentFee)}
-          </div>
-          <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>{METHOD_LABELS[proof.method]}</div>
+          </span>
         </Td>
         <Td className="proof-cell-when">
           <WaitTime proof={proof} now={now} />
         </Td>
         <Td className="proof-cell-receipt">
-          {cashInPerson ? (
-            // Handed to a committee member in person: there is no file to open,
-            // so no receipt button is rendered at all.
-            <span className="pay-no-receipt">Handed in person</span>
-          ) : proof.hasFile ? (
+          {proof.hasFile ? (
             <button
               type="button"
               className="proof-file"
@@ -309,7 +389,29 @@ function ProofRow({
           <StatusMark status={proof.status} />
         </Td>
         <Td className="proof-cell-review" align="right">
-          {pending ? (
+          {pending && confirming ? (
+            // Same two-step approval as the receipt viewer: approving can't be
+            // undone from the dashboard, so it takes a second, in-place click.
+            <div className="pay-actions">
+              <button
+                type="button"
+                className="admin-btn-secondary px-3 py-1.5 text-xs"
+                onClick={onCancelApprove}
+                disabled={busy}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="admin-btn-primary px-3 py-1.5 text-xs"
+                onClick={onConfirmApprove}
+                disabled={busy}
+                autoFocus
+              >
+                {busy ? 'Approving…' : 'Yes, approve'}
+              </button>
+            </div>
+          ) : pending ? (
             <div className="pay-actions">
               <button type="button" className="pay-btn-approve" onClick={onApprove} disabled={busy}>
                 Approve
@@ -516,21 +618,76 @@ function Pagination({
   );
 }
 
-function ReceiptModal({ proof, url, onClose }: { proof: PaymentProofRow; url: string; onClose: () => void }) {
+type ReviewControls = {
+  /** 1-based place of this proof among the page's reviewable proofs. */
+  position: number;
+  total: number;
+  busy: boolean;
+  /** Each resolves to an error to show here, or null once handled. */
+  onApprove: () => Promise<string | null>;
+  onReject: (reason: string) => Promise<string | null>;
+  onSkip: () => void;
+};
+
+/**
+ * The receipt, and — for a pending proof — the decision right under it, so a
+ * reviewer reads the receipt and rules on it in one place. Approving takes a
+ * second, in-place click: it cannot be undone from the dashboard.
+ */
+function ReceiptModal({
+  proof,
+  url,
+  review,
+  onClose,
+}: {
+  proof: PaymentProofRow;
+  url: string;
+  review?: ReviewControls;
+  onClose: () => void;
+}) {
   const isPdf = isPdfReceipt(proof);
-  useEscapeKey(onClose);
+  const [mode, setMode] = useState<'idle' | 'confirm' | 'reject'>('idle');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  // The viewer stays open while it moves to the next proof; start each fresh.
+  const [shownId, setShownId] = useState(proof.id);
+  if (shownId !== proof.id) {
+    setShownId(proof.id);
+    setMode('idle');
+    setReason('');
+    setError(null);
+  }
+
+  const busy = review?.busy ?? false;
+  useEscapeKey(busy ? null : mode === 'idle' ? onClose : () => setMode('idle'));
+
+  async function approve() {
+    if (!review) return;
+    setError(await review.onApprove());
+  }
+
+  async function reject() {
+    if (!review) return;
+    const invalid = validateRejectionReason(reason);
+    if (invalid) {
+      setError(invalid);
+      return;
+    }
+    setError(await review.onReject(reason.trim()));
+  }
 
   return (
-    <div className="admin-modal-overlay" onClick={onClose}>
+    <div className="admin-modal-overlay" onClick={busy ? undefined : onClose}>
       <div className="admin-modal pay-modal-wide" onClick={(e) => e.stopPropagation()}>
-        <button className="admin-modal-close" onClick={onClose} aria-label="Close">
+        <button className="admin-modal-close" onClick={onClose} aria-label="Close" disabled={busy}>
           &times;
         </button>
 
-        <div className="mb-4">
+        <div className="mb-4 pr-8">
           <h3 className="admin-heading text-lg text-white">{proof.participantName}</h3>
           <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            {METHOD_LABELS[proof.method]} &middot; {formatAmount(proof.currentFee)} &middot; {proof.fileName}
+            {formatAmount(proof.currentFee)} &middot; {proof.fileName}
           </p>
         </div>
 
@@ -543,59 +700,100 @@ function ReceiptModal({ proof, url, onClose }: { proof: PaymentProofRow; url: st
           <img className="pay-preview-img" src={url} alt={`Receipt from ${proof.participantName}`} />
         )}
 
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-3 flex items-center justify-between">
           <span className="pay-counter">This link expires in 60 seconds.</span>
           <a className="pay-link" href={url} target="_blank" rel="noreferrer">
             Open in new tab
           </a>
         </div>
-      </div>
-    </div>
-  );
-}
 
-function ApproveModal({
-  proof,
-  busy,
-  onConfirm,
-  onClose,
-}: {
-  proof: PaymentProofRow;
-  busy: boolean;
-  onConfirm: () => void;
-  onClose: () => void;
-}) {
-  useEscapeKey(busy ? null : onClose);
-
-  return (
-    <div className="admin-modal-overlay" onClick={onClose}>
-      <div className="admin-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 460 }}>
-        <button className="admin-modal-close" onClick={onClose} aria-label="Close">
-          &times;
-        </button>
-
-        <h3 className="admin-heading mb-3 text-lg text-white">Approve this payment?</h3>
-
-        <p className="mb-4 text-sm" style={{ color: 'rgba(255,255,255,0.65)' }}>
-          This marks <strong className="text-white">{proof.participantName}</strong> as paid. Approving cannot be undone
-          from this dashboard.
-        </p>
-
-        {isCashWithoutReceipt(proof) && (
-          <div className="pay-banner mb-4">
-            <span aria-hidden>!</span>
-            <span>Cash payment with no receipt &mdash; confirm it against the committee&apos;s own records first.</span>
+        {review && (
+          <div className="review-bar">
+            {mode === 'reject' ? (
+              <div className="space-y-2">
+                <textarea
+                  className="admin-input pay-textarea"
+                  value={reason}
+                  maxLength={REJECTION_REASON_MAX}
+                  placeholder="What should they fix? They see this word for word."
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    if (error) setError(null);
+                  }}
+                  autoFocus
+                />
+                <div className="flex items-center justify-between gap-3">
+                  <span className="pay-error">{error ?? ''}</span>
+                  <span className="flex shrink-0 items-center gap-2">
+                    <span className="pay-counter">
+                      {reason.trim().length}/{REJECTION_REASON_MAX}
+                    </span>
+                    <button
+                      type="button"
+                      className="admin-btn-secondary px-3 py-1.5 text-xs"
+                      onClick={() => setMode('idle')}
+                      disabled={busy}
+                    >
+                      Cancel
+                    </button>
+                    <button type="button" className="pay-btn-reject" onClick={reject} disabled={busy}>
+                      {busy ? 'Sending…' : 'Send rejection'}
+                    </button>
+                  </span>
+                </div>
+              </div>
+            ) : mode === 'confirm' ? (
+              <div className="review-row">
+                <span className="text-sm" style={{ color: 'rgba(255,255,255,0.75)' }}>
+                  Mark <strong className="text-white">{proof.participantName}</strong> as paid? This can&apos;t be
+                  undone here.
+                </span>
+                <span className="review-actions">
+                  <button
+                    type="button"
+                    className="admin-btn-secondary px-3 py-1.5 text-xs"
+                    onClick={() => setMode('idle')}
+                    disabled={busy}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn-primary px-3 py-1.5 text-xs"
+                    onClick={approve}
+                    disabled={busy}
+                    autoFocus
+                  >
+                    {busy ? 'Approving…' : 'Yes, approve'}
+                  </button>
+                </span>
+              </div>
+            ) : (
+              <div className="review-row">
+                <span className="pay-counter" style={{ fontSize: 12 }}>
+                  Proof {review.position} of {review.total} to review
+                </span>
+                <span className="review-actions">
+                  <button
+                    type="button"
+                    className="pay-link"
+                    onClick={review.onSkip}
+                    disabled={busy || review.total < 2}
+                  >
+                    Skip
+                  </button>
+                  <button type="button" className="pay-btn-reject" onClick={() => setMode('reject')} disabled={busy}>
+                    Reject
+                  </button>
+                  <button type="button" className="pay-btn-approve" onClick={() => setMode('confirm')} disabled={busy}>
+                    Approve
+                  </button>
+                </span>
+              </div>
+            )}
+            {mode !== 'reject' && error && <p className="pay-error mt-2">{error}</p>}
           </div>
         )}
-
-        <div className="flex justify-end gap-2">
-          <button type="button" className="admin-btn-secondary px-4 py-2 text-sm" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button type="button" className="admin-btn-primary px-4 py-2 text-sm" onClick={onConfirm} disabled={busy}>
-            {busy ? 'Approving...' : 'Approve'}
-          </button>
-        </div>
       </div>
     </div>
   );

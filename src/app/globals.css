@@ -435,9 +435,49 @@ button {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Two rows of three: people and money, then the three activities. */
 @media (min-width: 900px) {
   .viz-kpi-row {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* A tile that leads somewhere (e.g. the review queue). */
+.viz-tile--link {
+  display: block;
+  transition:
+    border-color 150ms ease,
+    transform 120ms var(--ease-out);
+}
+
+.viz-tile--link:active {
+  transform: scale(0.98);
+}
+
+.viz-tile--link:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 2px;
+}
+
+/* The tile's bottom line: the sub text, and a link's call to action on the right. */
+.viz-tile-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.viz-tile-cta {
+  flex-shrink: 0;
+  margin-top: 4px; /* matches .viz-tile-sub, so the two share a baseline */
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-green);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .viz-tile--link:hover {
+    border-color: rgba(0, 232, 122, 0.4);
   }
 }
 
@@ -450,6 +490,112 @@ button {
 @media (min-width: 860px) {
   .viz-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Card title on the left, a headline figure on the right. */
+.viz-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.viz-card-aside {
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.viz-card-aside-value {
+  display: block;
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-green);
+}
+
+.viz-card-aside-value[data-zero] {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.viz-card-aside-label {
+  font-size: 12px;
+  color: var(--viz-ink-muted);
+}
+
+/* A chart on one half, a stack of smaller ones on the other. */
+.viz-split {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 860px) {
+  .viz-split {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.viz-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.viz-stack > .viz-card {
+  flex: 1;
+}
+
+/* The donut at half width: ring on the left, the slices as a plain list on
+   the right — one line each, divided by hairlines, no boxes. The card
+   stretches to match the stack beside it, so the pair centres vertically. */
+.viz-split .viz-donut {
+  flex: 1;
+  gap: 32px;
+}
+
+.viz-split .viz-donut-figure {
+  width: 196px;
+  height: 196px;
+}
+
+.viz-split .viz-donut-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.viz-split .viz-donut-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 10px;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 0;
+  background: none;
+}
+
+.viz-split .viz-donut-row:last-child {
+  border-bottom: none;
+}
+
+/* Hovering a row lights its slice; the row itself only lifts slightly. */
+.viz-split .viz-donut-row.is-active {
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.viz-split .viz-donut-row-value {
+  font-size: 22px;
+}
+
+/* Below the side-by-side breakpoint the list spans the card under the ring. */
+@media (max-width: 719px) {
+  .viz-split .viz-donut-legend {
+    width: 100%;
   }
 }
 
@@ -1150,6 +1296,44 @@ button {
   max-width: 760px;
 }
 
+/* The decision under the receipt in the viewer. */
+.review-bar {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.review-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.review-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* Room for the review bar without the viewer scrolling. */
+.pay-modal-wide .pay-preview-img,
+.pay-modal-wide .pay-preview-frame {
+  max-height: 52vh;
+}
+
+.pay-modal-wide .pay-preview-frame {
+  height: 52vh;
+}
+
+.pay-banner--ok {
+  color: var(--color-green);
+  background: rgba(0, 232, 122, 0.06);
+  border-color: rgba(0, 232, 122, 0.25);
+}
+
 .pay-textarea {
   width: 100%;
   min-height: 96px;
@@ -1200,10 +1384,10 @@ button {
     transform 120ms ease;
 }
 
-.pay-mark--solid {
-  color: var(--color-bg);
-  background: var(--pay-mark);
-  border-color: var(--pay-mark);
+/* Smaller mark for dense lists (team member rows). */
+.pay-mark--sm {
+  width: 22px;
+  height: 22px;
 }
 
 .pay-action {
@@ -1284,6 +1468,17 @@ button {
 
 .skeleton-text {
   height: 12px;
+}
+
+/* The Membership donut's ring while the overview loads: same size as the
+   real one, hollow so it reads as a ring rather than a disc. */
+.skeleton-ring {
+  flex-shrink: 0;
+  width: 196px;
+  height: 196px;
+  border-radius: 50%;
+  -webkit-mask: radial-gradient(circle, transparent 54%, #000 55%);
+  mask: radial-gradient(circle, transparent 54%, #000 55%);
 }
 
 /* Most navigations finish in well under 200ms; holding the placeholder back
@@ -1499,11 +1694,32 @@ tr[data-reviewed='REJECTED'] {
   color: rgba(255, 255, 255, 0.3);
 }
 
+/* The toolbar's buttons share one width — wide enough for "Copied 300
+   emails", so the copy button's feedback never shifts the search box. */
+.part-toolbar-btn {
+  flex-shrink: 0;
+  width: 152px;
+  text-align: center;
+}
+
+/* Equal columns, so every filter is the same width and the row spans the
+   toolbar edge to edge, in line with the search above. Two per row on a phone. */
 .part-toolbar-filters {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px 18px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.part-toolbar-filters .part-select {
+  width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 640px) {
+  .part-toolbar-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .part-select {
@@ -1532,13 +1748,6 @@ tr[data-reviewed='REJECTED'] {
 .part-select option:checked {
   background-color: rgba(0, 232, 122, 0.16);
   color: var(--color-green);
-}
-
-/* One width for every participant type, sized to the longest label
-   (NonIEEE), so the Type column reads as an aligned stack of pills. */
-.part-type-badge {
-  justify-content: center;
-  min-width: 84px;
 }
 
 /* Fixed layout so the colgroup's shares hold whatever the content. */
@@ -1632,6 +1841,11 @@ tr[data-reviewed='REJECTED'] {
     flex-direction: column;
     align-items: stretch;
   }
+
+  /* Stacked full-width on a phone, so the shared desktop width lets go. */
+  .part-toolbar-btn {
+    width: auto;
+  }
 }
 
 @media (max-width: 640px) {
@@ -1655,6 +1869,206 @@ tr[data-reviewed='REJECTED'] {
     display: flex;
   }
 }
+/* ─── Hackathon: teams grouped by axis ──────────────── */
+
+.team-group {
+  padding-top: 8px;
+}
+
+.team-group-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.team-group-count {
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.team-group-empty {
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* ─── Participant details popup ───────────────────────
+   One rhythm throughout: a header, the payment strip, then quiet sections
+   divided by hairlines — no coloured headings competing with the content. */
+
+.pmodal {
+  max-width: 560px;
+  padding: 28px;
+}
+
+/* Name and email on the left, membership on the right. */
+.pmodal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-right: 32px; /* clear of the close button */
+}
+
+.pmodal-head .part-member {
+  flex-shrink: 0;
+  margin-top: 4px; /* centres the chips on the name's first line */
+}
+
+.pmodal-email {
+  margin-top: 2px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.45);
+  overflow-wrap: anywhere;
+}
+
+.pmodal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.pmodal-pay {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 10px 14px 10px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--pay-mark) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pay-mark) 22%, transparent);
+}
+
+.pmodal-pay-state {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pay-mark);
+}
+
+.pmodal-pay-fee {
+  font-size: 14px;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.pmodal-pay-fee::before {
+  content: '·';
+  margin-right: 10px;
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.pmodal-pay-link {
+  margin-left: auto;
+  font-size: 13px;
+}
+
+.pmodal-section {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pmodal-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pmodal-section-head h4 {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.pmodal-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px 20px;
+}
+
+.pmodal-grid dt {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.pmodal-grid dd {
+  margin-top: 2px;
+  font-size: 14px;
+  color: #ffffff;
+  overflow-wrap: anywhere;
+}
+
+.pmodal-muted {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.pmodal-teams {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pmodal-teams li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.pmodal-team-activity {
+  flex-shrink: 0;
+  width: 92px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.pmodal-team-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ffffff;
+}
+
+.pmodal-leader {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-green);
+}
+
+@media (max-width: 480px) {
+  .pmodal {
+    padding: 22px 18px;
+  }
+
+  .pmodal-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ─── IEEE membership verification ────────────────── */
 
 .ieee-issue {

@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 import { withCheckerNames } from '@/lib/ieee-checkers';
 import { apiFetch } from '@/lib/trsyp-api';
@@ -6,6 +7,8 @@ import { ParticipantsTable } from './participants-table';
 
 /** Generous enough to cover every participant's full submission history. */
 const PROOFS_TAKE = 1000;
+
+export const metadata: Metadata = { title: 'Participants' };
 
 export default async function ParticipantsPage() {
   // Participants stay on Prisma: the REST endpoint returns none of the nested

@@ -1,10 +1,10 @@
-import { apiFetch } from '@/lib/trsyp-api';
+import type { Metadata } from 'next';
+import { PROOFS_TAKE, getAllProofs } from '@/lib/payment-proofs';
 import {
   PAYMENT_PROOF_STATUSES,
   STATUS_LABELS,
   byOldestFirst,
   latestProofPerParticipant,
-  type PaymentProofRow,
   type PaymentProofStatus,
 } from '@/lib/payment';
 import { PaymentsTable } from './payments-table';
@@ -15,24 +15,16 @@ const MAX_TAKE = 100;
 /**
  * The queue shows one row per participant, so it cannot let the backend
  * paginate: collapsing a page of 20 proofs could leave any number of rows, and
- * the counts would not survive it. Everything is fetched, collapsed, then
- * paged here. At ~300 participants holding a couple of proofs each this is one
- * modest request; revisit if submissions ever outgrow it.
+ * the counts would not survive it. Everything is fetched (getAllProofs),
+ * collapsed, then paged here. At ~300 participants holding a couple of proofs
+ * each this is one modest request; revisit if submissions ever outgrow it.
  */
-const FETCH_ALL = 1000;
 
 type SearchParams = {
   status?: string;
   skip?: string;
   take?: string;
   proof?: string;
-};
-
-type ProofsResponse = {
-  data: PaymentProofRow[];
-  total: number;
-  skip: number;
-  take: number;
 };
 
 function parseStatus(value: string | undefined): PaymentProofStatus | 'ALL' {
@@ -54,6 +46,15 @@ function parseInteger(value: string | undefined, fallback: number, max: number) 
   return Math.min(parsed, max);
 }
 
+/** "(12) Payments" while proofs wait, so the queue shows from another tab. */
+export async function generateMetadata(): Promise<Metadata> {
+  const result = await getAllProofs();
+  const pending = result.ok
+    ? latestProofPerParticipant(result.data.data).filter((proof) => proof.status === 'PENDING').length
+    : 0;
+  return { title: pending > 0 ? `(${pending}) Payments` : 'Payments' };
+}
+
 export default async function PaymentsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams;
 
@@ -65,7 +66,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   // a participant's whole history: filtering first would surface a superseded
   // PENDING proof from before a resubmission, which is exactly what this is
   // meant to hide.
-  const result = await apiFetch<ProofsResponse>(`/payment/admin/proofs?take=${FETCH_ALL}`);
+  const result = await getAllProofs();
 
   if (!result.ok) {
     return (
@@ -107,7 +108,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         <div className="pay-banner">
           <span aria-hidden>!</span>
           <span>
-            Only the first {FETCH_ALL} of {result.data.total} proofs were read, so some participants may be missing
+            Only the first {PROOFS_TAKE} of {result.data.total} proofs were read, so some participants may be missing
             from this queue.
           </span>
         </div>

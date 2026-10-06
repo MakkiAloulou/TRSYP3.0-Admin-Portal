@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { useEscapeKey } from '@/lib/use-escape-key';
 import { ModalPresence } from '../modal-presence';
 import { PaymentIcon } from '../payment-icon';
@@ -11,6 +12,8 @@ import {
   PAYMENT_STATE_COLORS,
   PAYMENT_STATE_LABELS,
   derivePaymentState,
+  feeFor,
+  formatAmount,
   type PaymentProofStatus,
   type PaymentState,
 } from '@/lib/payment';
@@ -90,6 +93,45 @@ const NO_FILTERS: Filters = {
   activity: 'ALL',
 };
 
+/** URL parameter for each filter, so a filtered view survives a refresh, a
+ *  shared link, and the round trip to a proof and back. */
+const FILTER_PARAMS: Record<keyof Filters, string> = {
+  query: 'q',
+  payment: 'payment',
+  membership: 'membership',
+  sb: 'sb',
+  activity: 'activity',
+};
+
+const MEMBERSHIP_FILTERS: MembershipFilter[] = ['ALL', 'NON_IEEE', 'IEEE', 'RAS'];
+const ACTIVITY_FILTERS: ActivityFilter[] = ['ALL', 'COMPETITION', 'CHALLENGE', 'FABLAB', 'NONE'];
+
+/** Filters from the URL, ignoring any value that isn't a real option. */
+function filtersFromParams(params: URLSearchParams): Filters {
+  const pick = <T extends string>(key: keyof Filters, allowed: readonly T[]) => {
+    const value = params.get(FILTER_PARAMS[key]);
+    return allowed.includes(value as T) ? (value as T) : (NO_FILTERS[key] as T);
+  };
+
+  return {
+    query: params.get(FILTER_PARAMS.query) ?? '',
+    payment: pick('payment', ['ALL', ...PAYMENT_STATES]),
+    membership: pick('membership', MEMBERSHIP_FILTERS),
+    sb: params.get(FILTER_PARAMS.sb) || 'ALL',
+    activity: pick('activity', ACTIVITY_FILTERS),
+  };
+}
+
+/** The current URL with only non-default filters set. */
+function urlForFilters(filters: Filters) {
+  const params = new URLSearchParams();
+  for (const key of Object.keys(FILTER_PARAMS) as (keyof Filters)[]) {
+    if (filters[key] !== NO_FILTERS[key]) params.set(FILTER_PARAMS[key], filters[key]);
+  }
+  const search = params.toString();
+  return search ? `?${search}` : window.location.pathname;
+}
+
 /** Read from the priced `participantType` / `isRas`, which an IEEE check
  *  writes through — so once a check has run, this is IEEE's answer. */
 function isIeee(p: ParticipantRow) {
@@ -148,7 +190,8 @@ function matches(p: ParticipantRow, filters: Filters, haystack: string) {
 
 export function ParticipantsTable({ participants }: { participants: ParticipantRow[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const searchParams = useSearchParams();
+  const [filters, setFilters] = useState<Filters>(() => filtersFromParams(searchParams));
   const ieee = useIeeeVerification(participants);
 
   // Rows with this session's IEEE results merged in; everything below reads
@@ -178,13 +221,36 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
 
   const isFiltered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
 
+  // replaceState rather than the router: the URL keeps up without a server
+  // round trip or re-fetching every participant, and Next keeps
+  // useSearchParams in sync with it.
+  function applyFilters(next: Filters) {
+    setFilters(next);
+    window.history.replaceState(null, '', urlForFilters(next));
+  }
+
   function set<K extends keyof Filters>(key: K, value: Filters[K]) {
-    setFilters((current) => ({ ...current, [key]: value }));
+    applyFilters({ ...filters, [key]: value });
   }
 
   function handleExport() {
     // Exports what is on screen — filtering and then exporting is the point.
     downloadCsv(buildParticipantsCsv(visible), participantsCsvFilename());
+  }
+
+  // What the copy button last did, shown in its own label for a moment.
+  const [copied, setCopied] = useState<string | null>(null);
+
+  async function handleCopyEmails() {
+    // Comma-separated, ready to paste into an email's To or Bcc field.
+    const emails = visible.map((p) => p.user.email).join(', ');
+    try {
+      await navigator.clipboard.writeText(emails);
+      setCopied(`Copied ${visible.length} email${visible.length === 1 ? '' : 's'}`);
+    } catch {
+      setCopied('Copy failed');
+    }
+    setTimeout(() => setCopied(null), 2000);
   }
 
   return (
@@ -201,7 +267,17 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
           />
           <button
             type="button"
-            className="admin-btn-secondary px-4 py-2 text-sm"
+            className="admin-btn-secondary part-toolbar-btn py-2 text-sm"
+            onClick={handleCopyEmails}
+            disabled={visible.length === 0}
+            title="Copy the emails of everyone shown, comma-separated"
+            aria-live="polite"
+          >
+            {copied ?? 'Copy emails'}
+          </button>
+          <button
+            type="button"
+            className="admin-btn-secondary part-toolbar-btn py-2 text-sm"
             onClick={handleExport}
             disabled={visible.length === 0}
           >
@@ -259,7 +335,7 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
             Showing {visible.length} of {participants.length}
           </span>
           {isFiltered && (
-            <button type="button" className="pay-link" onClick={() => setFilters(NO_FILTERS)}>
+            <button type="button" className="pay-link" onClick={() => applyFilters(NO_FILTERS)}>
               Clear filters
             </button>
           )}
@@ -306,7 +382,11 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
                 >
                   {participant.user.name} {participant.user.lastName}
                 </Td>
-                <Td className="part-cell-email truncate" style={{ color: 'rgba(255,255,255,0.5)' }} title={participant.user.email}>
+                <Td
+                  className="part-cell-email truncate"
+                  style={{ color: 'rgba(255,255,255,0.5)' }}
+                  title={participant.user.email}
+                >
                   {participant.user.email}
                 </Td>
                 <Td className="part-cell-member text-center">
@@ -367,19 +447,6 @@ function Select({
   );
 }
 
-/** Same three states in the detail modal, in the badge language used there. */
-function PaymentBadge({ participant }: { participant: ParticipantRow }) {
-  const state = derivePaymentState(participant.paid, participant.latestProof?.status ?? null);
-  return <span className={`admin-badge ${BADGE_VARIANTS[state]}`}>{PAYMENT_STATE_LABELS[state]}</span>;
-}
-
-const BADGE_VARIANTS: Record<PaymentState, string> = {
-  PAID: 'admin-badge--green',
-  PENDING: 'admin-badge--amber',
-  REJECTED: 'admin-badge--red',
-  NOT_PAID: 'admin-badge--pink',
-};
-
 /**
  * Four states from two sources: `paid` on the participant, plus the status of
  * their most recent proof. Tick, cross and clock are one round mark each; the
@@ -417,7 +484,7 @@ function PaymentStatus({ participant }: { participant: ParticipantRow }) {
 
   return (
     <span
-      className={`pay-mark${state === 'PAID' ? ' pay-mark--solid' : ''}`}
+      className="pay-mark"
       style={style}
       title={PAYMENT_STATE_LABELS[state]}
       role="img"
@@ -452,26 +519,6 @@ function MembershipBadge({ participant: p }: { participant: ParticipantRow }) {
   );
 }
 
-/** Short enough that every type fits the same fixed badge width. */
-const TYPE_LABELS: Record<string, string> = {
-  YoungProfessional: 'YP',
-};
-
-function TypeBadge({ participantType }: { participantType: string }) {
-  const variant =
-    participantType === 'NonIEEE'
-      ? 'admin-badge--green'
-      : participantType === 'Student'
-        ? 'admin-badge--pink'
-        : 'admin-badge--gray';
-
-  return (
-    <span className={`admin-badge part-type-badge ${variant}`} title={participantType}>
-      {TYPE_LABELS[participantType] ?? participantType}
-    </span>
-  );
-}
-
 function ParticipantDetailModal({
   participant: p,
   onClose,
@@ -483,73 +530,100 @@ function ParticipantDetailModal({
   children?: React.ReactNode;
 }) {
   useEscapeKey(onClose);
+  const teams = p.memberships;
 
   return (
     <div className="admin-modal-overlay" onClick={onClose}>
-      <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
+      <div className="admin-modal pmodal" onClick={(e) => e.stopPropagation()}>
         <button className="admin-modal-close" onClick={onClose} aria-label="Close">
           ×
         </button>
 
-        <div className="mb-5">
-          <h3 className="admin-heading text-lg text-white">
-            {p.user.name} {p.user.lastName}
-          </h3>
-          <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-            {p.user.email}
-          </p>
-        </div>
+        <header className="pmodal-head">
+          <div className="min-w-0">
+            <h3 className="admin-heading text-lg text-white">
+              {p.user.name} {p.user.lastName}
+            </h3>
+            <p className="pmodal-email">{p.user.email}</p>
+          </div>
+          {/* Same chips as the table's Membership column, so the two never disagree. */}
+          <MembershipBadge participant={p} />
+        </header>
 
-        <div className="mb-5 flex flex-wrap gap-2">
-          {!p.user.active && <span className="admin-badge admin-badge--gray">Unverified</span>}
-          <TypeBadge participantType={p.participantType} />
-          <PaymentBadge participant={p} />
-          {p.banned && <span className="admin-badge admin-badge--pink">Banned</span>}
-          {p.isInternational && <span className="admin-badge admin-badge--pink">International</span>}
-          {p.isRas && <span className="admin-badge admin-badge--gray">RAS</span>}
-        </div>
+        {(!p.user.active || p.banned || p.isInternational) && (
+          <div className="pmodal-tags">
+            {!p.user.active && <span className="admin-badge admin-badge--gray">Unverified</span>}
+            {p.banned && <span className="admin-badge admin-badge--pink">Banned</span>}
+            {p.isInternational && <span className="admin-badge admin-badge--gray">International</span>}
+          </div>
+        )}
 
-        <div className="space-y-4">
+        <PaymentStrip participant={p} />
+
+        <Section title="Profile">
           <DetailGrid>
             <Detail label="Phone" value={p.phone} />
             <Detail label="Gender" value={p.gender} />
             <Detail label="Country" value={p.country} />
-            <Detail label="Student Branch" value={p.sb ?? '—'} />
+            <Detail label="Student branch" value={p.sb ?? '—'} />
             <Detail label="IEEE ID" value={p.ieeeId?.toString() ?? '—'} />
             <Detail label="Career stage" value={CAREER_STAGE_LABELS[p.careerStage ?? ''] ?? '—'} />
-            <Detail label="Competition Team" value={teamLabel(p, 'COMPETITION')} />
-            <Detail label="Challenge Team" value={teamLabel(p, 'CHALLENGE')} />
-            <Detail label="Hackathon Team" value={teamLabel(p, 'FABLAB')} />
-            <Detail label="Room" value={p.room ? p.room.status : '—'} />
+            {p.room && <Detail label="Room" value={p.room.status} />}
           </DetailGrid>
+        </Section>
 
-          {p.internationalInfo && (
-            <div>
-              <h4
-                className="admin-heading mb-2 text-xs uppercase"
-                style={{ color: 'var(--color-pink)', letterSpacing: '0.1em' }}
-              >
-                International Info
-              </h4>
-              <DetailGrid>
-                <Detail label="Date of Birth" value={formatDate(p.internationalInfo.dateOfBirth)} />
-                <Detail label="Residence" value={p.internationalInfo.cityOfResidence} />
-                <Detail label="Country of Residence" value={p.internationalInfo.countryOfResidence} />
-                <Detail label="Affiliation" value={p.internationalInfo.affiliation} />
-                <Detail label="Arrival" value={formatDate(p.internationalInfo.expectedArrivalDate)} />
-                <Detail label="Departure" value={formatDate(p.internationalInfo.expectedDepartureDate)} />
-                <Detail label="Visa Letter Needed" value={p.internationalInfo.requiresVisaLetter ? 'Yes' : 'No'} />
-                <Detail label="Visa Status" value={p.internationalInfo.visaApplication?.status ?? '—'} />
-              </DetailGrid>
-            </div>
+        <Section title="Teams">
+          {teams.length === 0 ? (
+            <p className="pmodal-muted">Not on a team.</p>
+          ) : (
+            <ul className="pmodal-teams">
+              {ACTIVITY_ORDER.filter((activity) => teams.some((m) => m.activity === activity)).map((activity) => {
+                const team = teams.find((m) => m.activity === activity)!.team;
+                return (
+                  <li key={activity}>
+                    <span className="pmodal-team-activity">{ACTIVITY_LABELS[activity]}</span>
+                    <span className="pmodal-team-name">{team.name}</span>
+                    <span className="pmodal-muted">{team.code}</span>
+                    {team.leaderId === p.id && <span className="pmodal-leader">Leader</span>}
+                  </li>
+                );
+              })}
+            </ul>
           )}
+        </Section>
 
-          {children}
-        </div>
+        {p.internationalInfo && (
+          <Section title="International">
+            <DetailGrid>
+              <Detail label="Date of birth" value={formatDate(p.internationalInfo.dateOfBirth)} />
+              <Detail label="Affiliation" value={p.internationalInfo.affiliation} />
+              <Detail
+                label="Lives in"
+                value={`${p.internationalInfo.cityOfResidence}, ${p.internationalInfo.countryOfResidence}`}
+              />
+              <Detail
+                label="Stay"
+                value={`${formatDate(p.internationalInfo.expectedArrivalDate)} – ${formatDate(p.internationalInfo.expectedDepartureDate)}`}
+              />
+              <Detail label="Visa letter" value={p.internationalInfo.requiresVisaLetter ? 'Needed' : 'Not needed'} />
+              <Detail label="Visa status" value={p.internationalInfo.visaApplication?.status ?? '—'} />
+            </DetailGrid>
+          </Section>
+        )}
+
+        {children}
       </div>
     </div>
   );
 }
+
+const ACTIVITY_ORDER: Membership['activity'][] = ['COMPETITION', 'CHALLENGE', 'FABLAB'];
+
+const ACTIVITY_LABELS: Record<Membership['activity'], string> = {
+  COMPETITION: 'Competition',
+  CHALLENGE: 'Challenge',
+  FABLAB: 'Hackathon',
+};
 
 /** The participant's own answer, as they chose it on registration. */
 const CAREER_STAGE_LABELS: Record<string, string> = {
@@ -557,26 +631,66 @@ const CAREER_STAGE_LABELS: Record<string, string> = {
   YoungProfessional: 'Young Professional',
 };
 
-/** "Name (CODE) — Leader" for the participant's team in one activity, or "—". */
-function teamLabel(p: ParticipantRow, activity: Membership['activity']) {
-  const membership = p.memberships.find((m) => m.activity === activity);
-  if (!membership) return '—';
+/**
+ * Where their payment stands, in one line: the table's icon and state, what
+ * they owe, and a link to their newest proof.
+ */
+function PaymentStrip({ participant: p }: { participant: ParticipantRow }) {
+  const proof = p.latestProof;
+  const state = derivePaymentState(p.paid, proof?.status ?? null);
+  const link =
+    proof && (proof.status === 'PENDING' ? 'Review proof' : proof.status === 'REJECTED' ? 'See rejection' : 'View proof');
 
-  const isLeader = membership.team.leaderId === p.id;
-  return `${membership.team.name} (${membership.team.code})${isLeader ? ' — Leader' : ''}`;
+  return (
+    <div className="pmodal-pay" style={{ '--pay-mark': PAYMENT_STATE_COLORS[state] } as React.CSSProperties}>
+      <span className="pay-mark" aria-hidden>
+        <PaymentIcon state={state} size={16} />
+      </span>
+      <span className="pmodal-pay-state">{PAYMENT_STATE_LABELS[state]}</span>
+      <span className="pmodal-pay-fee">{formatAmount(feeFor(p))}</span>
+      {proof && link ? (
+        <Link href={`/payments?status=${proof.status}&proof=${proof.id}`} className="pay-link pmodal-pay-link">
+          {link} &rarr;
+        </Link>
+      ) : (
+        <span className="pmodal-muted pmodal-pay-link">No proof sent</span>
+      )}
+    </div>
+  );
+}
+
+/** A titled block of the details popup. The IEEE section (ieee-verify.tsx)
+ *  uses the same pmodal-section markup. */
+function Section({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  /** Sits at the right of the title (e.g. a re-check button). */
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="pmodal-section">
+      <div className="pmodal-section-head">
+        <h4>{title}</h4>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
 }
 
 function DetailGrid({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">{children}</div>;
+  return <dl className="pmodal-grid">{children}</dl>;
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div>
-      <div className="text-[10px] uppercase" style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}>
-        {label}
-      </div>
-      <div className="text-sm text-white">{value}</div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   );
 }

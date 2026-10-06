@@ -1,6 +1,6 @@
 import type { TeamActivity } from '@prisma/client';
 import type { ParticipantRow } from '../participants/participants-table';
-import { FABLAB_AXES } from './teams-grid';
+import { FABLAB_AXES } from './team-types';
 import { IEEE_CSV_COLUMNS } from '../participants/ieee-csv';
 
 /** A participant as loaded by `getParticipantsByActivity`, whose teams also carry the FABLAB fields. */

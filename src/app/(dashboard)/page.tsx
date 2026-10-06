@@ -1,92 +1,87 @@
+import type { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 import { apiFetch } from '@/lib/trsyp-api';
-import { latestProofPerParticipant, type PaymentProofRow } from '@/lib/payment';
+import {
+  PAYMENT_STATE_COLORS,
+  PAYMENT_STATE_LABELS,
+  derivePaymentState,
+  feeFor,
+  latestProofPerParticipant,
+  type PaymentProofRow,
+  type PaymentState,
+} from '@/lib/payment';
 import { ChartCard, DonutBreakdown, RankedBars, ShareBar, StatTile, TrendChart, VIZ, type TrendPoint } from './charts';
 import { RegionMap } from './region-map';
 import { regionForBranch } from '@/lib/student-branch-region';
 import { REGION_NAMES } from '@/lib/tunisia-regions';
-import {
-  IEEE_CHECK_COLORS,
-  IEEE_CHECK_LABELS,
-  deriveIeeeState,
-  type IeeeCheckState,
-  type IeeeIssue,
-} from '@/lib/ieee-verification';
 
-/** Status palette — reserved for state, never reused as a series colour. */
-const STATUS = {
-  good: '#0ca30c',
-  warning: '#fab219',
-  serious: '#ec835a',
-  critical: '#d03b3b',
-} as const;
+/** Status colour for "needs attention" — reserved for state, never a series colour. */
+const WARNING = '#fab219';
 
-/** Slice order around the donut, as validated for adjacent-pair contrast:
- *  green, violet, red, then unchecked in grey. */
-const IEEE_ORDER: IeeeCheckState[] = ['VERIFIED', 'NOT_RAS', 'NOT_IEEE', 'UNVERIFIED'];
+/** The Membership column's colours, so the chart and the table agree. */
+const MEMBERSHIP_COLORS = { nonIeee: 'var(--color-pink)', ieee: 'var(--color-green)', ras: '#a78bfa' };
 
-const VISA_ORDER = [
-  { status: 'Pending', color: STATUS.warning },
-  { status: 'LetterSent', label: 'Letter sent', color: STATUS.serious },
-  { status: 'Approved', color: STATUS.good },
-  { status: 'Rejected', color: STATUS.critical },
-] as const;
+/** Settled first, then what still needs someone. */
+const PAYMENT_ORDER: PaymentState[] = ['PAID', 'PENDING', 'REJECTED', 'NOT_PAID'];
+
+export const metadata: Metadata = { title: 'Overview' };
 
 export default async function DashboardPage() {
-  const [participants, teams, visaApplications, proofs] = await Promise.all([
+  const [participants, teams, proofs] = await Promise.all([
     prisma.participant.findMany({
       select: {
-        ieeeId: true,
+        id: true,
         isRas: true,
         participantType: true,
         gender: true,
-        isInternational: true,
+        paid: true,
         banned: true,
         sb: true,
         createdAt: true,
-        user: { select: { active: true, email: true, name: true, lastName: true } },
-        // The stored IEEE record and the profile it was checked against: the
-        // verdict is judged from these under the current rules.
-        ieeeVerification: {
-          select: {
-            memberStatus: true,
-            grade: true,
-            societies: true,
-            firstInitial: true,
-            lastInitial: true,
-            matchedBy: true,
-            // Carries a RAS claim made under the old form (see claimedRas).
-            issues: true,
-            claimedIeeeId: true,
-            claimedType: true,
-            claimedIsRas: true,
-            claimedEmail: true,
-          },
-        },
+        // Only how many there are: a team in any activity is what moves the fee.
+        memberships: { select: { activity: true } },
+        user: { select: { active: true } },
       },
     }),
-    prisma.team.findMany({
-      select: { activity: true, size: true, _count: { select: { memberships: true } } },
-    }),
-    prisma.visaApplication.findMany({ select: { status: true } }),
+    prisma.team.findMany({ select: { activity: true } }),
     apiFetch<{ data: PaymentProofRow[]; total: number }>('/payment/admin/proofs?take=1000'),
   ]);
 
   const total = participants.length;
   // Same rule as the Payments page: only a participant's newest proof counts.
-  const pendingProofs = proofs.ok
-    ? latestProofPerParticipant(proofs.data.data).filter((p) => p.status === 'PENDING')
-    : [];
+  const latestProofs = proofs.ok ? latestProofPerParticipant(proofs.data.data) : [];
+  const pendingProofs = latestProofs.filter((p) => p.status === 'PENDING');
   const oldestPending = pendingProofs.reduce<string | null>(
     (min, p) => (min === null || Date.parse(p.createdAt) < Date.parse(min) ? p.createdAt : min),
     null,
   );
-  const international = participants.filter((p) => p.isInternational).length;
   const unverified = participants.filter((p) => !p.user.active).length;
 
-  // "IEEE" == holds a membership grade; NonIEEE is the only non-member type.
+  // Money. A paid participant counts at what their approved proof was priced
+  // at — the amount actually handed over — falling back to the current fee if
+  // there is no such proof. Everyone not banned is expected to pay.
+  const paidAmount = new Map(
+    latestProofs.filter((p) => p.status === 'APPROVED').map((p) => [p.participantId, p.amountSnapshot]),
+  );
+  const owed = (p: (typeof participants)[number]) => (p.paid ? (paidAmount.get(p.id) ?? feeFor(p)) : feeFor(p));
+  const paidCount = participants.filter((p) => p.paid).length;
+  const collected = participants.filter((p) => p.paid).reduce((sum, p) => sum + owed(p), 0);
+  const expected = participants.filter((p) => p.paid || !p.banned).reduce((sum, p) => sum + owed(p), 0);
+
+  // The three tiers the Membership column shows. RAS only counts for IEEE
+  // members, mirroring how the fee is priced.
   const nonIeee = participants.filter((p) => p.participantType === 'NonIEEE').length;
-  const ieee = total - nonIeee;
+  const ras = participants.filter((p) => p.participantType !== 'NonIEEE' && p.isRas).length;
+  const ieeeOnly = total - nonIeee - ras;
+
+  // The four states of the participants table's Payment column.
+  const latestStatus = new Map(latestProofs.map((p) => [p.participantId, p.status]));
+  const paymentStates = participants.map((p) => derivePaymentState(p.paid, latestStatus.get(p.id) ?? null));
+  const paymentSlices = PAYMENT_ORDER.map((state) => ({
+    label: PAYMENT_STATE_LABELS[state],
+    value: paymentStates.filter((s) => s === state).length,
+    color: PAYMENT_STATE_COLORS[state],
+  }));
 
   const byGender = countBy(participants, (p) => normaliseGender(p.gender));
   const bySb = countBy(
@@ -106,39 +101,9 @@ export default async function DashboardPage() {
   const competitionTeams = teams.filter((t) => t.activity === 'COMPETITION');
   const challengeTeams = teams.filter((t) => t.activity === 'CHALLENGE');
   const hackathonTeams = teams.filter((t) => t.activity === 'FABLAB');
-  const fullTeams = teams.filter((t) => t._count.memberships >= t.size).length;
-
-  // Every participant: participant_type is IEEE's verdict now, so a NonIEEE
-  // participant was looked up too (or is about to be).
-  const ieeeStates = participants.map((p) =>
-    deriveIeeeState({
-      ...p,
-      ieeeVerification: p.ieeeVerification && {
-        ...p.ieeeVerification,
-        matchedBy: p.ieeeVerification.matchedBy as 'IEEE_ID' | 'EMAIL' | null,
-        issues: p.ieeeVerification.issues as IeeeIssue[],
-      },
-    }),
-  );
-
-  const ieeeItems = IEEE_ORDER.map((state) => ({
-    label: IEEE_CHECK_LABELS[state],
-    value: ieeeStates.filter((s) => s === state).length,
-    color: IEEE_CHECK_COLORS[state],
-  })).filter((item) => item.value > 0);
-
-  // Both member tiers: RAS (Verified) and IEEE without RAS.
-  const ieeeVerified = ieeeStates.filter((s) => s === 'VERIFIED' || s === 'NOT_RAS').length;
-  const ieeeNotIeee = ieeeStates.filter((s) => s === 'NOT_IEEE').length;
-  const ieeePending = ieeeStates.filter((s) => s === 'UNVERIFIED').length;
-
-  const visaItems = VISA_ORDER.map((v) => ({
-    label: 'label' in v ? v.label : v.status,
-    value: visaApplications.filter((a) => a.status === v.status).length,
-    color: v.color,
-  }));
 
   const trend = buildTrend(participants.map((p) => p.createdAt));
+  const thisWeek = registeredInLastDays(participants.map((p) => p.createdAt), 7);
 
   return (
     <div className="space-y-6">
@@ -161,7 +126,14 @@ export default async function DashboardPage() {
                 ? oldestWaiting(oldestPending)
                 : 'Queue clear.'
           }
-          accent={pendingProofs.length > 0 ? STATUS.warning : undefined}
+          accent={pendingProofs.length > 0 ? WARNING : undefined}
+          href="/payments?status=PENDING"
+          cta={pendingProofs.length > 0 ? 'Review now' : 'Open payments'}
+        />
+        <StatTile
+          label="Fees collected"
+          value={`${formatTnd(collected)} TND`}
+          sub={`of ${formatTnd(expected)} TND · ${paidCount} of ${total} paid`}
         />
         <StatTile
           label="Competition teams"
@@ -180,25 +152,21 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <ChartCard title="Registrations over time" subtitle="Cumulative registrations since the first registration">
+      <ChartCard
+        title="Registrations over time"
+        subtitle="Cumulative registrations since the first registration"
+        aside={
+          <>
+            <span className="viz-card-aside-value" data-zero={thisWeek === 0 ? '' : undefined}>
+              +{thisWeek}
+            </span>
+            <span className="viz-card-aside-label">in the last 7 days</span>
+          </>
+        }
+      >
         <TrendChart points={trend} />
       </ChartCard>
 
-      <ChartCard
-        title="IEEE verification"
-        subtitle={`IEEE's answer for all ${ieeeStates.length} participants`}
-      >
-        <DonutBreakdown
-          items={ieeeItems}
-          centerValue={sharePct(ieeeVerified, ieeeStates.length)}
-          centerLabel={`IEEE members (${ieeeVerified} of ${ieeeStates.length})`}
-          emptyLabel="No participants yet"
-        />
-        <div className="viz-footnote">
-          <span>{ieeeNotIeee} not IEEE members</span>
-          <span>{ieeePending} awaiting a current check</span>
-        </div>
-      </ChartCard>
 
       <div className="viz-grid">
         <ChartCard title="Top student branches" subtitle="Ten largest delegations">
@@ -212,23 +180,34 @@ export default async function DashboardPage() {
             {unplaced > 0 && <span>{unplaced} unmapped</span>}
           </div>
         </ChartCard>
-
-        <ChartCard title="IEEE vs non-IEEE" subtitle={`${total} participants`}>
-          <ShareBar
-            slices={[
-              { label: 'IEEE members', value: ieee, color: VIZ[0] },
-              { label: 'Non-IEEE', value: nonIeee, color: VIZ[1] },
-            ]}
+      </div>
+      {/* Membership on one half; the two part-to-whole splits stacked on the other. */}
+      <div className="viz-split">
+        <ChartCard title="Membership" subtitle={`All ${total} participants, as each is priced`}>
+          <DonutBreakdown
+            items={[
+              { label: 'Non-IEEE', value: nonIeee, color: MEMBERSHIP_COLORS.nonIeee },
+              { label: 'IEEE', value: ieeeOnly, color: MEMBERSHIP_COLORS.ieee },
+              { label: 'IEEE + RAS', value: ras, color: MEMBERSHIP_COLORS.ras },
+            ].filter((item) => item.value > 0)}
+            centerValue={sharePct(total - nonIeee, total)}
+            // The counts are in the list beside the ring; the centre stays short.
+            centerLabel="IEEE members"
+            emptyLabel="No participants yet"
           />
         </ChartCard>
 
-        <ChartCard title="Gender split" subtitle={`${total} participants`}>
-          <ShareBar
-            slices={byGender.map((g, i) => ({ label: g.label, value: g.value, color: VIZ[i % VIZ.length] }))}
-          />
-        </ChartCard>
+        <div className="viz-stack">
+          <ChartCard title="Payment status" subtitle={`${total} participants`}>
+            <ShareBar slices={paymentSlices} />
+          </ChartCard>
 
-
+          <ChartCard title="Gender split" subtitle={`${total} participants`}>
+            <ShareBar
+              slices={byGender.map((g, i) => ({ label: g.label, value: g.value, color: VIZ[i % VIZ.length] }))}
+            />
+          </ChartCard>
+        </div>
       </div>
     </div>
   );
@@ -260,12 +239,23 @@ function normaliseGender(gender: string) {
   return gender.trim() || 'Unspecified';
 }
 
+/** "21,450" — grouped so four- and five-figure sums read at a glance. */
+function formatTnd(amount: number) {
+  return amount.toLocaleString('en-US');
+}
+
 function sharePct(value: number, total: number) {
   if (total === 0) return '0%';
   return `${Math.round((value / total) * 100)}%`;
 }
 
 /** Cumulative sign-ups, one point per calendar day (UTC) from first to today. */
+/** How many registered in the last `days` days, counting back from now. */
+function registeredInLastDays(dates: Date[], days: number) {
+  const since = Date.now() - days * 86_400_000;
+  return dates.filter((d) => d.getTime() >= since).length;
+}
+
 function buildTrend(dates: Date[]): TrendPoint[] {
   if (dates.length === 0) return [];
 

@@ -1,55 +1,68 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
 import { withCheckerNames } from '@/lib/ieee-checkers';
+import { apiFetch } from '@/lib/trsyp-api';
+import { derivePaymentState, latestProofPerParticipant, type PaymentProofRow } from '@/lib/payment';
 import type { TeamActivity } from '@prisma/client';
-import type { TeamRow } from './teams-grid';
+import type { TeamRow } from './team-types';
+
+const memberSelect = {
+  id: true,
+  paid: true,
+  user: { select: { name: true, lastName: true } },
+} as const;
 
 /**
  * Loads every team for one activity, flattening `memberships` into the plain
  * member list the grid renders. Teams are scoped by `Team.activity`, so the
  * competition, challenge and hackathon pages never see each other's rows.
+ *
+ * Each member carries a payment state, built the participants page's way: the
+ * `paid` flag plus the status of their newest proof. If the proofs can't be
+ * loaded, members fall back to paid / not paid.
  */
 export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRow[]> {
-  const teams = await prisma.team.findMany({
-    where: { activity },
-    orderBy: { createdAt: 'desc' },
-    select: {
-      id: true,
-      name: true,
-      code: true,
-      size: true,
-      leaderId: true,
-      axis: true,
-      submissionUrl: true,
-      submittedAt: true,
-      leader: {
-        select: {
-          id: true,
-          user: { select: { name: true, lastName: true } },
+  const [teams, proofs] = await Promise.all([
+    prisma.team.findMany({
+      where: { activity },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        code: true,
+        size: true,
+        leaderId: true,
+        axis: true,
+        submissionUrl: true,
+        submittedAt: true,
+        leader: { select: memberSelect },
+        memberships: {
+          orderBy: { createdAt: 'asc' },
+          select: { participant: { select: memberSelect } },
         },
       },
-      memberships: {
-        orderBy: { createdAt: 'asc' },
-        select: {
-          participant: {
-            select: {
-              id: true,
-              user: { select: { name: true, lastName: true } },
-            },
-          },
-        },
-      },
-    },
-  });
+    }),
+    apiFetch<{ data: PaymentProofRow[] }>('/payment/admin/proofs?take=1000'),
+  ]);
+
+  const latestStatus = new Map(
+    proofs.ok ? latestProofPerParticipant(proofs.data.data).map((p) => [p.participantId, p.status]) : [],
+  );
 
   return teams.map((team) => {
-    const members = team.memberships.map((m) => m.participant);
+    const people = team.memberships.map((m) => m.participant);
 
     // Whether the leader also gets a membership row is the registration app's
     // call; listing them first when they don't keeps the card from hiding them.
-    if (!members.some((m) => m.id === team.leaderId)) {
-      members.unshift(team.leader);
+    if (!people.some((m) => m.id === team.leaderId)) {
+      people.unshift(team.leader);
     }
+
+    const members = people.map(({ id, user, paid }) => ({
+      id,
+      user,
+      payment: derivePaymentState(paid, latestStatus.get(id) ?? null),
+    }));
 
     return {
       id: team.id,

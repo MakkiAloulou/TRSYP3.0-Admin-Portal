@@ -12,13 +12,6 @@ export type PaymentProofStatus = (typeof PAYMENT_PROOF_STATUSES)[number];
 export const REJECTION_REASON_MIN = 5;
 export const REJECTION_REASON_MAX = 500;
 
-export const METHOD_LABELS: Record<PaymentMethod, string> = {
-  BANK_TRANSFER: 'Bank transfer',
-  D17: 'D17',
-  FLOUCI: 'Flouci',
-  CASH: 'Cash',
-};
-
 export const STATUS_LABELS: Record<PaymentProofStatus, string> = {
   PENDING: 'Pending',
   APPROVED: 'Approved',
@@ -71,15 +64,6 @@ export function latestProofPerParticipant(proofs: PaymentProofRow[]): PaymentPro
 /** Oldest first: the queue is worked front to back, longest wait first. */
 export function byOldestFirst(a: PaymentProofRow, b: PaymentProofRow) {
   return Date.parse(a.createdAt) - Date.parse(b.createdAt);
-}
-
-/**
- * Cash is handed to a committee member in person, so there is never a receipt
- * to open. Any other method without a file is a genuine anomaly, and the two
- * must not look alike in the UI.
- */
-export function isCashWithoutReceipt(proof: Pick<PaymentProofRow, 'method' | 'hasFile'>) {
-  return proof.method === 'CASH' && !proof.hasFile;
 }
 
 /**

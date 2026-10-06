@@ -113,11 +113,9 @@ export function IeeeSection({
   const checking = activity !== undefined;
 
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h4 className="admin-heading text-xs uppercase" style={{ color: 'var(--color-pink)', letterSpacing: '0.1em' }}>
-          IEEE Membership
-        </h4>
+    <section className="pmodal-section">
+      <div className="pmodal-section-head">
+        <h4>IEEE membership</h4>
         <button
           type="button"
           className="admin-btn-secondary px-3 py-1 text-xs"
@@ -175,7 +173,7 @@ export function IeeeSection({
               </div>
             ))}
 
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2.5">
+            <dl className="pmodal-grid">
               <IeeeDetail label="IEEE status" value={v.memberStatus ?? 'No record'} />
               <IeeeDetail label="Grade" value={v.grade || '—'} />
               <IeeeDetail
@@ -185,41 +183,34 @@ export function IeeeSection({
               <IeeeDetail label="Priced as" value={`${p.participantType}${p.isRas ? ' · RAS' : ''}`} />
               {v.memberStatus !== null && (
                 <div className="col-span-2">
-                  <div
-                    className="text-[10px] uppercase"
-                    style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}
-                  >
-                    Active societies
-                  </div>
+                  <dt>Active societies</dt>
                   {v.societies.length === 0 ? (
-                    <div className="text-sm text-white">None</div>
+                    <dd>None</dd>
                   ) : (
-                    <div className="mt-1 flex flex-wrap gap-1.5">
+                    <dd className="mt-1 flex flex-wrap gap-1.5">
                       {v.societies.map((code) => (
                         <span key={code} className={`ieee-society${isRasSociety(code) ? ' ieee-society--key' : ''}`}>
                           {code}
                           {isRasSociety(code) && ' · RAS'}
                         </span>
                       ))}
-                    </div>
+                    </dd>
                   )}
                 </div>
               )}
-            </div>
+            </dl>
           </>
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
 function IeeeDetail({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase" style={{ color: 'rgba(255,255,255,0.35)', letterSpacing: '0.08em' }}>
-        {label}
-      </div>
-      <div className="text-sm text-white">{value}</div>
+      <dt>{label}</dt>
+      <dd>{value}</dd>
     </div>
   );
 }

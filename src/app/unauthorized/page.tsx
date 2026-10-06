@@ -1,3 +1,6 @@
+import type { Metadata } from 'next';
+export const metadata: Metadata = { title: 'Access denied' };
+
 export default function UnauthorizedPage() {
   return (
     <div

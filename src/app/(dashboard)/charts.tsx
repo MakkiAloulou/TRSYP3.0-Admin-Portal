@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 
 /**
  * Chart primitives, hand-rolled in SVG/CSS so the dashboard stays dependency-free
@@ -27,21 +28,44 @@ export function StatTile({
   value,
   sub,
   accent,
+  href,
+  cta,
 }: {
   label: string;
   value: string | number;
   sub?: string;
   accent?: string;
+  /** Makes the whole tile a link — for numbers someone acts on. */
+  href?: string;
+  /** What following the link does. Shares the bottom line with `sub`, so the
+   *  tile stays the same height as its neighbours. */
+  cta?: string;
 }) {
-  return (
-    <div className="admin-card viz-tile">
+  const showCta = Boolean(href && cta);
+  const body = (
+    <>
       <div className="viz-tile-label">{label}</div>
       <div className="viz-tile-value" style={accent ? { color: accent } : undefined}>
         {value}
       </div>
-      {sub && <div className="viz-tile-sub">{sub}</div>}
-    </div>
+      {(sub || showCta) && (
+        <div className="viz-tile-row">
+          {sub && <div className="viz-tile-sub">{sub}</div>}
+          {showCta && <span className="viz-tile-cta">{cta} &rarr;</span>}
+        </div>
+      )}
+    </>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className="admin-card viz-tile viz-tile--link">
+        {body}
+      </Link>
+    );
+  }
+
+  return <div className="admin-card viz-tile">{body}</div>;
 }
 
 /* ── Card shell ─────────────────────────────────────────── */
@@ -49,18 +73,32 @@ export function StatTile({
 export function ChartCard({
   title,
   subtitle,
+  aside,
   children,
 }: {
   title: string;
   subtitle?: string;
+  /** A headline figure at the right of the title (e.g. "+14 this week"). */
+  aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
+  const head = (
+    <div className="viz-card-head">
+      <h3 className="admin-heading viz-card-title">{title}</h3>
+      {subtitle && <p className="viz-card-sub">{subtitle}</p>}
+    </div>
+  );
+
   return (
     <div className="admin-card viz-card">
-      <div className="viz-card-head">
-        <h3 className="admin-heading viz-card-title">{title}</h3>
-        {subtitle && <p className="viz-card-sub">{subtitle}</p>}
-      </div>
+      {aside ? (
+        <div className="viz-card-top">
+          {head}
+          <div className="viz-card-aside">{aside}</div>
+        </div>
+      ) : (
+        head
+      )}
       {children}
     </div>
   );
