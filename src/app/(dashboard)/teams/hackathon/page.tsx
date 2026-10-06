@@ -1,12 +1,17 @@
 import type { Metadata } from 'next';
 import { getTeamsByActivity, getParticipantsByActivity } from '../team-data';
-import { TeamsGrid } from '../teams-grid';
+import { getAllProofs } from '@/lib/payment-proofs';
+import { StreamedTeamsGrid } from '../teams-grid';
 import { FABLAB_AXES } from '../team-types';
 import { TeamExportButton } from '../team-export-button';
 
 export const metadata: Metadata = { title: 'Hackathon teams' };
 
 export default async function HackathonTeamsPage() {
+  // The member icons need the payments service; start it with the database
+  // queries so the streamed grid finds it already on its way.
+  void getAllProofs();
+
   const [teams, participants] = await Promise.all([
     getTeamsByActivity('FABLAB'),
     getParticipantsByActivity('FABLAB'),
@@ -36,7 +41,7 @@ export default async function HackathonTeamsPage() {
       </div>
 
       {teams.length === 0 ? (
-        <TeamsGrid teams={teams} showFablab />
+        <StreamedTeamsGrid teams={teams} showFablab />
       ) : (
         groups.map((group) => (
           <section key={group.key} className="team-group">
@@ -47,7 +52,7 @@ export default async function HackathonTeamsPage() {
             {group.teams.length === 0 ? (
               <p className="team-group-empty">No team has picked this axis yet.</p>
             ) : (
-              <TeamsGrid teams={group.teams} showFablab />
+              <StreamedTeamsGrid teams={group.teams} showFablab />
             )}
           </section>
         ))

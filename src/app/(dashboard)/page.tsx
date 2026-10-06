@@ -1,16 +1,17 @@
+import { Suspense } from 'react';
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
-import { apiFetch } from '@/lib/trsyp-api';
+import { getAllProofs } from '@/lib/payment-proofs';
 import {
   PAYMENT_STATE_COLORS,
   PAYMENT_STATE_LABELS,
   derivePaymentState,
   feeFor,
   latestProofPerParticipant,
-  type PaymentProofRow,
   type PaymentState,
 } from '@/lib/payment';
 import { ChartCard, DonutBreakdown, RankedBars, ShareBar, StatTile, TrendChart, VIZ, type TrendPoint } from './charts';
+import { ChartCardSkeleton, Skeleton, StatTileSkeleton } from './loading-skeletons';
 import { RegionMap } from './region-map';
 import { regionForBranch } from '@/lib/student-branch-region';
 import { REGION_NAMES } from '@/lib/tunisia-regions';
@@ -26,62 +27,50 @@ const PAYMENT_ORDER: PaymentState[] = ['PAID', 'PENDING', 'REJECTED', 'NOT_PAID'
 
 export const metadata: Metadata = { title: 'Overview' };
 
+function loadParticipants() {
+  return prisma.participant.findMany({
+    select: {
+      id: true,
+      isRas: true,
+      participantType: true,
+      gender: true,
+      paid: true,
+      banned: true,
+      sb: true,
+      createdAt: true,
+      // Only how many there are: a team in any activity is what moves the fee.
+      memberships: { select: { activity: true } },
+      user: { select: { active: true } },
+    },
+  });
+}
+
+type OverviewParticipant = Awaited<ReturnType<typeof loadParticipants>>[number];
+
+/**
+ * The page waits only for the database. Everything that needs the payments
+ * service — which can be slow to wake — streams in behind its own skeleton
+ * (PaymentTiles, PaymentStatusCard), so a cold backend no longer holds up
+ * the charts that don't depend on it.
+ */
 export default async function DashboardPage() {
-  const [participants, teams, proofs] = await Promise.all([
-    prisma.participant.findMany({
-      select: {
-        id: true,
-        isRas: true,
-        participantType: true,
-        gender: true,
-        paid: true,
-        banned: true,
-        sb: true,
-        createdAt: true,
-        // Only how many there are: a team in any activity is what moves the fee.
-        memberships: { select: { activity: true } },
-        user: { select: { active: true } },
-      },
-    }),
+  // Start the payments request now, alongside the database queries; the
+  // streamed sections below pick up this same cached request.
+  void getAllProofs();
+
+  const [participants, teams] = await Promise.all([
+    loadParticipants(),
     prisma.team.findMany({ select: { activity: true } }),
-    apiFetch<{ data: PaymentProofRow[]; total: number }>('/payment/admin/proofs?take=1000'),
   ]);
 
   const total = participants.length;
-  // Same rule as the Payments page: only a participant's newest proof counts.
-  const latestProofs = proofs.ok ? latestProofPerParticipant(proofs.data.data) : [];
-  const pendingProofs = latestProofs.filter((p) => p.status === 'PENDING');
-  const oldestPending = pendingProofs.reduce<string | null>(
-    (min, p) => (min === null || Date.parse(p.createdAt) < Date.parse(min) ? p.createdAt : min),
-    null,
-  );
   const unverified = participants.filter((p) => !p.user.active).length;
-
-  // Money. A paid participant counts at what their approved proof was priced
-  // at — the amount actually handed over — falling back to the current fee if
-  // there is no such proof. Everyone not banned is expected to pay.
-  const paidAmount = new Map(
-    latestProofs.filter((p) => p.status === 'APPROVED').map((p) => [p.participantId, p.amountSnapshot]),
-  );
-  const owed = (p: (typeof participants)[number]) => (p.paid ? (paidAmount.get(p.id) ?? feeFor(p)) : feeFor(p));
-  const paidCount = participants.filter((p) => p.paid).length;
-  const collected = participants.filter((p) => p.paid).reduce((sum, p) => sum + owed(p), 0);
-  const expected = participants.filter((p) => p.paid || !p.banned).reduce((sum, p) => sum + owed(p), 0);
 
   // The three tiers the Membership column shows. RAS only counts for IEEE
   // members, mirroring how the fee is priced.
   const nonIeee = participants.filter((p) => p.participantType === 'NonIEEE').length;
   const ras = participants.filter((p) => p.participantType !== 'NonIEEE' && p.isRas).length;
   const ieeeOnly = total - nonIeee - ras;
-
-  // The four states of the participants table's Payment column.
-  const latestStatus = new Map(latestProofs.map((p) => [p.participantId, p.status]));
-  const paymentStates = participants.map((p) => derivePaymentState(p.paid, latestStatus.get(p.id) ?? null));
-  const paymentSlices = PAYMENT_ORDER.map((state) => ({
-    label: PAYMENT_STATE_LABELS[state],
-    value: paymentStates.filter((s) => s === state).length,
-    color: PAYMENT_STATE_COLORS[state],
-  }));
 
   const byGender = countBy(participants, (p) => normaliseGender(p.gender));
   const bySb = countBy(
@@ -116,25 +105,16 @@ export default async function DashboardPage() {
 
       <div className="viz-kpi-row">
         <StatTile label="Participants" value={total} sub={`${unverified} unverified`} />
-        <StatTile
-          label="Proofs to review"
-          value={proofs.ok ? pendingProofs.length : '—'}
-          sub={
-            !proofs.ok
-              ? 'Could not load the queue'
-              : oldestPending
-                ? oldestWaiting(oldestPending)
-                : 'Queue clear.'
+        <Suspense
+          fallback={
+            <>
+              <StatTileSkeleton />
+              <StatTileSkeleton />
+            </>
           }
-          accent={pendingProofs.length > 0 ? WARNING : undefined}
-          href="/payments?status=PENDING"
-          cta={pendingProofs.length > 0 ? 'Review now' : 'Open payments'}
-        />
-        <StatTile
-          label="Fees collected"
-          value={`${formatTnd(collected)} TND`}
-          sub={`of ${formatTnd(expected)} TND · ${paidCount} of ${total} paid`}
-        />
+        >
+          <PaymentTiles participants={participants} />
+        </Suspense>
         <StatTile
           label="Competition teams"
           value={competitionTeams.length}
@@ -167,7 +147,6 @@ export default async function DashboardPage() {
         <TrendChart points={trend} />
       </ChartCard>
 
-
       <div className="viz-grid">
         <ChartCard title="Top student branches" subtitle="Ten largest delegations">
           <RankedBars items={topN(bySb, 10)} emptyLabel="No student branch recorded yet" />
@@ -181,6 +160,7 @@ export default async function DashboardPage() {
           </div>
         </ChartCard>
       </div>
+
       {/* Membership on one half; the two part-to-whole splits stacked on the other. */}
       <div className="viz-split">
         <ChartCard title="Membership" subtitle={`All ${total} participants, as each is priced`}>
@@ -198,9 +178,9 @@ export default async function DashboardPage() {
         </ChartCard>
 
         <div className="viz-stack">
-          <ChartCard title="Payment status" subtitle={`${total} participants`}>
-            <ShareBar slices={paymentSlices} />
-          </ChartCard>
+          <Suspense fallback={<ShareCardSkeleton />}>
+            <PaymentStatusCard participants={participants} />
+          </Suspense>
 
           <ChartCard title="Gender split" subtitle={`${total} participants`}>
             <ShareBar
@@ -210,6 +190,81 @@ export default async function DashboardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ── sections that wait on the payments service ─────────── */
+
+/** Proofs to review and Fees collected, the two tiles that need proofs. */
+async function PaymentTiles({ participants }: { participants: OverviewParticipant[] }) {
+  const proofs = await getAllProofs();
+
+  // Same rule as the Payments page: only a participant's newest proof counts.
+  const latestProofs = proofs.ok ? latestProofPerParticipant(proofs.data.data) : [];
+  const pendingProofs = latestProofs.filter((p) => p.status === 'PENDING');
+  const oldestPending = pendingProofs.reduce<string | null>(
+    (min, p) => (min === null || Date.parse(p.createdAt) < Date.parse(min) ? p.createdAt : min),
+    null,
+  );
+
+  // Money. A paid participant counts at what their approved proof was priced
+  // at — the amount actually handed over — falling back to the current fee if
+  // there is no such proof. Everyone not banned is expected to pay.
+  const paidAmount = new Map(
+    latestProofs.filter((p) => p.status === 'APPROVED').map((p) => [p.participantId, p.amountSnapshot]),
+  );
+  const owed = (p: OverviewParticipant) => (p.paid ? (paidAmount.get(p.id) ?? feeFor(p)) : feeFor(p));
+  const paidCount = participants.filter((p) => p.paid).length;
+  const collected = participants.filter((p) => p.paid).reduce((sum, p) => sum + owed(p), 0);
+  const expected = participants.filter((p) => p.paid || !p.banned).reduce((sum, p) => sum + owed(p), 0);
+
+  return (
+    <>
+      <StatTile
+        label="Proofs to review"
+        value={proofs.ok ? pendingProofs.length : '—'}
+        sub={!proofs.ok ? 'Could not load the queue' : oldestPending ? oldestWaiting(oldestPending) : 'Queue clear.'}
+        accent={pendingProofs.length > 0 ? WARNING : undefined}
+        href="/payments?status=PENDING"
+        cta={pendingProofs.length > 0 ? 'Review now' : 'Open payments'}
+      />
+      <StatTile
+        label="Fees collected"
+        value={`${formatTnd(collected)} TND`}
+        sub={`of ${formatTnd(expected)} TND · ${paidCount} of ${participants.length} paid`}
+      />
+    </>
+  );
+}
+
+/** The four states of the participants table's Payment column. */
+async function PaymentStatusCard({ participants }: { participants: OverviewParticipant[] }) {
+  const proofs = await getAllProofs();
+  const latestStatus = new Map(
+    proofs.ok ? latestProofPerParticipant(proofs.data.data).map((p) => [p.participantId, p.status]) : [],
+  );
+  const states = participants.map((p) => derivePaymentState(p.paid, latestStatus.get(p.id) ?? null));
+
+  return (
+    <ChartCard title="Payment status" subtitle={`${participants.length} participants`}>
+      <ShareBar
+        slices={PAYMENT_ORDER.map((state) => ({
+          label: PAYMENT_STATE_LABELS[state],
+          value: states.filter((s) => s === state).length,
+          color: PAYMENT_STATE_COLORS[state],
+        }))}
+      />
+    </ChartCard>
+  );
+}
+
+/** Stands in for a share-bar card while it streams: the bar, then the legend. */
+function ShareCardSkeleton() {
+  return (
+    <ChartCardSkeleton>
+      <Skeleton style={{ height: 14 }} />
+      <Skeleton className="skeleton-text" style={{ width: '60%' }} />
+    </ChartCardSkeleton>
   );
 }
 

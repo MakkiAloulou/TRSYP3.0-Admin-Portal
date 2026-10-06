@@ -1,8 +1,8 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
 import { withCheckerNames } from '@/lib/ieee-checkers';
-import { apiFetch } from '@/lib/trsyp-api';
-import { derivePaymentState, latestProofPerParticipant, type PaymentProofRow } from '@/lib/payment';
+import { getAllProofs } from '@/lib/payment-proofs';
+import { derivePaymentState, latestProofPerParticipant } from '@/lib/payment';
 import type { TeamActivity } from '@prisma/client';
 import type { TeamRow } from './team-types';
 
@@ -17,13 +17,12 @@ const memberSelect = {
  * member list the grid renders. Teams are scoped by `Team.activity`, so the
  * competition, challenge and hackathon pages never see each other's rows.
  *
- * Each member carries a payment state, built the participants page's way: the
- * `paid` flag plus the status of their newest proof. If the proofs can't be
- * loaded, members fall back to paid / not paid.
+ * Database only, so it returns fast: a member's payment is known here only
+ * when they are `paid`, and is null (still loading) otherwise. withPayments
+ * fills in the rest from the payments service.
  */
 export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRow[]> {
-  const [teams, proofs] = await Promise.all([
-    prisma.team.findMany({
+  const teams = await prisma.team.findMany({
       where: { activity },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -41,13 +40,7 @@ export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRo
           select: { participant: { select: memberSelect } },
         },
       },
-    }),
-    apiFetch<{ data: PaymentProofRow[] }>('/payment/admin/proofs?take=1000'),
-  ]);
-
-  const latestStatus = new Map(
-    proofs.ok ? latestProofPerParticipant(proofs.data.data).map((p) => [p.participantId, p.status]) : [],
-  );
+  });
 
   return teams.map((team) => {
     const people = team.memberships.map((m) => m.participant);
@@ -61,7 +54,9 @@ export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRo
     const members = people.map(({ id, user, paid }) => ({
       id,
       user,
-      payment: derivePaymentState(paid, latestStatus.get(id) ?? null),
+      paid,
+      // Paid is final, so it needs no proof to show; the rest wait for one.
+      payment: paid ? ('PAID' as const) : null,
     }));
 
     return {
@@ -76,6 +71,26 @@ export async function getTeamsByActivity(activity: TeamActivity): Promise<TeamRo
       members,
     };
   });
+}
+
+/**
+ * Each member's full payment state, built the participants page's way: the
+ * `paid` flag plus the status of their newest proof. If the proofs can't be
+ * loaded, members fall back to paid / not paid.
+ */
+export async function withPayments(teams: TeamRow[]): Promise<TeamRow[]> {
+  const proofs = await getAllProofs();
+  const latestStatus = new Map(
+    proofs.ok ? latestProofPerParticipant(proofs.data.data).map((p) => [p.participantId, p.status]) : [],
+  );
+
+  return teams.map((team) => ({
+    ...team,
+    members: team.members.map((m) => ({
+      ...m,
+      payment: derivePaymentState(m.paid, latestStatus.get(m.id) ?? null),
+    })),
+  }));
 }
 
 /**

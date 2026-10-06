@@ -1,11 +1,12 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useEscapeKey } from '@/lib/use-escape-key';
 import { ModalPresence } from '../modal-presence';
 import { PaymentIcon } from '../payment-icon';
+import { Skeleton } from '../loading-skeletons';
 import { buildParticipantsCsv, downloadCsv, participantsCsvFilename } from './export-csv';
 import {
   PAYMENT_STATES,
@@ -69,6 +70,17 @@ export type ParticipantRow = {
     createdAt: string;
   };
 };
+
+/** The payments service's answer for this page, streamed in after the table. */
+export type PaymentsInfo =
+  | {
+      ok: true;
+      /** Each participant's newest proof, by participant id. */
+      latest: Record<string, { id: string; status: PaymentProofStatus }>;
+      /** Set when there were more proofs than one fetch reads. */
+      truncatedAt: number | null;
+    }
+  | { ok: false; message: string };
 
 type ActivityFilter = 'ALL' | 'COMPETITION' | 'CHALLENGE' | 'FABLAB' | 'NONE';
 
@@ -188,7 +200,26 @@ function matches(p: ParticipantRow, filters: Filters, haystack: string) {
   return true;
 }
 
-export function ParticipantsTable({ participants }: { participants: ParticipantRow[] }) {
+export function ParticipantsTable({
+  participants,
+  payments,
+}: {
+  participants: ParticipantRow[];
+  /** Resolves once the payments service answers; the table shows meanwhile. */
+  payments: Promise<PaymentsInfo>;
+}) {
+  const [paymentsInfo, setPaymentsInfo] = useState<PaymentsInfo | null>(null);
+  useEffect(() => {
+    let live = true;
+    void payments.then((info) => {
+      if (live) setPaymentsInfo(info);
+    });
+    return () => {
+      live = false;
+    };
+  }, [payments]);
+  const paymentsReady = paymentsInfo !== null;
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const searchParams = useSearchParams();
   const [filters, setFilters] = useState<Filters>(() => filtersFromParams(searchParams));
@@ -196,7 +227,14 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
 
   // Rows with this session's IEEE results merged in; everything below reads
   // these, so a row updates the moment its batch returns.
-  const rows = ieee.rows;
+  // Each row's newest proof joined in once the payments service has answered.
+  const rows = useMemo(
+    () =>
+      paymentsInfo?.ok
+        ? ieee.rows.map((p) => ({ ...p, latestProof: paymentsInfo.latest[p.id] ?? null }))
+        : ieee.rows,
+    [ieee.rows, paymentsInfo],
+  );
 
   // Held by id so the open modal follows the row as its IEEE result arrives.
   const selected = selectedId ? (rows.find((p) => p.id === selectedId) ?? null) : null;
@@ -207,9 +245,13 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
     [participants],
   );
 
+  // A payment filter can't be applied before the proofs arrive — it would
+  // show unpaid-looking rows that are really pending — so it waits for them.
+  const waitingForPayments = filters.payment !== 'ALL' && !paymentsReady;
+
   const visible = useMemo(
-    () => rows.filter((p) => matches(p, filters, haystacks.get(p.id) ?? '')),
-    [rows, filters, haystacks],
+    () => (waitingForPayments ? [] : rows.filter((p) => matches(p, filters, haystacks.get(p.id) ?? ''))),
+    [rows, filters, haystacks, waitingForPayments],
   );
 
   // Only branches that actually appear. The SB enum has ~55 entries and listing
@@ -255,6 +297,23 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
 
   return (
     <>
+      {paymentsInfo && !paymentsInfo.ok && (
+        <div className="pay-banner">
+          <span aria-hidden>!</span>
+          <span>
+            Payment status could not be loaded ({paymentsInfo.message}) &mdash; rows below show only Paid or Not paid,
+            so a pending submission will look unpaid.
+          </span>
+        </div>
+      )}
+
+      {paymentsInfo?.ok && paymentsInfo.truncatedAt !== null && (
+        <div className="pay-banner">
+          <span aria-hidden>!</span>
+          <span>More than {paymentsInfo.truncatedAt} proofs exist; some rows may show as Not paid.</span>
+        </div>
+      )}
+
       <div className="admin-card part-toolbar">
         <div className="part-toolbar-top">
           <input
@@ -365,7 +424,7 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
             {visible.length === 0 && (
               <tr>
                 <td colSpan={4} className="viz-empty">
-                  No participant matches these filters.
+                  {waitingForPayments ? 'Loading payment status…' : 'No participant matches these filters.'}
                 </td>
               </tr>
             )}
@@ -395,7 +454,7 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
                 {/* Clicking the status opens the row modal, so the link stops
                     propagation and goes straight to the proof instead. */}
                 <Td className="part-cell-pay text-center" onClick={(e) => e.stopPropagation()}>
-                  <PaymentStatus participant={participant} />
+                  <PaymentStatus participant={participant} ready={paymentsReady} />
                 </Td>
               </tr>
             ))}
@@ -405,7 +464,11 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
 
       <ModalPresence>
         {selected && (
-          <ParticipantDetailModal participant={selected} onClose={() => setSelectedId(null)}>
+          <ParticipantDetailModal
+            participant={selected}
+            paymentsReady={paymentsReady}
+            onClose={() => setSelectedId(null)}
+          >
             <IeeeSection
               participant={selected}
               activity={ieee.activity[selected.id]}
@@ -452,7 +515,13 @@ function Select({
  * their most recent proof. Tick, cross and clock are one round mark each; the
  * clock and the rejected button link through to the proof.
  */
-function PaymentStatus({ participant }: { participant: ParticipantRow }) {
+function PaymentStatus({ participant, ready }: { participant: ParticipantRow; ready: boolean }) {
+  // Paid comes from the database and is final; anything else depends on the
+  // newest proof, which is still on its way from the payments service.
+  if (!ready && !participant.paid) {
+    return <Skeleton className="inline-block align-middle" style={{ width: 28, height: 28, borderRadius: '50%' }} />;
+  }
+
   const proof = participant.latestProof;
   const state = derivePaymentState(participant.paid, proof?.status ?? null);
   const style = { '--pay-mark': PAYMENT_STATE_COLORS[state] } as React.CSSProperties;
@@ -521,10 +590,13 @@ function MembershipBadge({ participant: p }: { participant: ParticipantRow }) {
 
 function ParticipantDetailModal({
   participant: p,
+  paymentsReady,
   onClose,
   children,
 }: {
   participant: ParticipantRow;
+  /** False until the payments service answers; see PaymentStrip. */
+  paymentsReady: boolean;
   onClose: () => void;
   /** Extra sections rendered after the participant's own details. */
   children?: React.ReactNode;
@@ -558,7 +630,7 @@ function ParticipantDetailModal({
           </div>
         )}
 
-        <PaymentStrip participant={p} />
+        <PaymentStrip participant={p} ready={paymentsReady} />
 
         <Section title="Profile">
           <DetailGrid>
@@ -635,7 +707,11 @@ const CAREER_STAGE_LABELS: Record<string, string> = {
  * Where their payment stands, in one line: the table's icon and state, what
  * they owe, and a link to their newest proof.
  */
-function PaymentStrip({ participant: p }: { participant: ParticipantRow }) {
+function PaymentStrip({ participant: p, ready }: { participant: ParticipantRow; ready: boolean }) {
+  if (!ready && !p.paid) {
+    return <Skeleton style={{ height: 50, marginTop: 20, borderRadius: 12 }} />;
+  }
+
   const proof = p.latestProof;
   const state = derivePaymentState(p.paid, proof?.status ?? null);
   const link =

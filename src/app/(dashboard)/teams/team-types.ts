@@ -1,14 +1,16 @@
 import type { FablabAxis } from '@prisma/client';
 import type { PaymentState } from '@/lib/payment';
 
-// Kept apart from teams-grid.tsx, which is a client component: a server page
-// importing a value from a 'use client' module gets a reference, not the value.
+// Kept apart from teams-grid.tsx and team-data.ts, which are server-only: the
+// CSV export runs in the browser and needs the axes without pulling those in.
 
 type TeamMemberSummary = {
   id: string;
   user: { name: string; lastName: string };
-  /** Same four states as the participants table's Payment column. */
-  payment: PaymentState;
+  paid: boolean;
+  /** Same four states as the participants table's Payment column, or null
+   *  while the payments service is still answering. */
+  payment: PaymentState | null;
 };
 
 export type TeamRow = {

@@ -1,8 +1,9 @@
-import { ChartCardSkeleton, Skeleton } from './loading-skeletons';
+import { ChartCardSkeleton, Skeleton, StatTileSkeleton } from './loading-skeletons';
 
-// The overview reads every participant, team and payment proof before it can
-// draw anything. This keeps the page's shape on screen while it does — the
-// same grid as the real page, so nothing jumps when the data lands.
+// The overview waits on the database before it can draw anything; the
+// payment-dependent parts then stream in behind their own skeletons. This
+// keeps the page's shape on screen meanwhile — the same grid as the real page,
+// so nothing jumps when the data lands.
 export default function OverviewLoading() {
   return (
     <div className="space-y-6">
@@ -17,16 +18,18 @@ export default function OverviewLoading() {
         {/* Two rows of three: people and money, then the three activities. */}
         <div className="viz-kpi-row">
           {Array.from({ length: 6 }).map((_, tile) => (
-            <div key={tile} className="admin-card viz-tile">
-              <Skeleton className="skeleton-text" style={{ width: '45%' }} />
-              <Skeleton style={{ width: '35%', height: 28, marginTop: 10 }} />
-              <Skeleton className="skeleton-text" style={{ width: '70%', marginTop: 10 }} />
-            </div>
+            <StatTileSkeleton key={tile} />
           ))}
         </div>
 
         {/* Registrations over time. */}
         <ChartCardSkeleton height={220} />
+
+        {/* Top student branches and the region map. */}
+        <div className="viz-grid">
+          <ChartCardSkeleton height={260} />
+          <ChartCardSkeleton height={260} />
+        </div>
 
         {/* Membership donut beside the two stacked splits. */}
         <div className="viz-split">
@@ -49,12 +52,6 @@ export default function OverviewLoading() {
               </ChartCardSkeleton>
             ))}
           </div>
-        </div>
-
-        {/* Top student branches and the region map. */}
-        <div className="viz-grid">
-          <ChartCardSkeleton height={260} />
-          <ChartCardSkeleton height={260} />
         </div>
       </div>
 

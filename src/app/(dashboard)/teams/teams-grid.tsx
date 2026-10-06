@@ -1,6 +1,26 @@
 import { PAYMENT_STATE_COLORS, PAYMENT_STATE_LABELS } from '@/lib/payment';
 import { PaymentIcon } from '../payment-icon';
+import { Suspense } from 'react';
+import { Skeleton } from '../loading-skeletons';
+import { withPayments } from './team-data';
 import type { TeamRow } from './team-types';
+
+/**
+ * The grid straight from the database, then again with every member's payment
+ * once the payments service answers — so a slow backend never holds up the
+ * cards, only the icons it alone knows.
+ */
+export function StreamedTeamsGrid({ teams, showFablab = false }: { teams: TeamRow[]; showFablab?: boolean }) {
+  return (
+    <Suspense fallback={<TeamsGrid teams={teams} showFablab={showFablab} />}>
+      <TeamsWithPayments teams={teams} showFablab={showFablab} />
+    </Suspense>
+  );
+}
+
+async function TeamsWithPayments({ teams, showFablab }: { teams: TeamRow[]; showFablab: boolean }) {
+  return <TeamsGrid teams={await withPayments(teams)} showFablab={showFablab} />;
+}
 
 /**
  * Renders one activity's teams. The hackathon's axis and concept submission
@@ -61,15 +81,20 @@ function TeamCard({ team, showFablab }: { team: TeamRow; showFablab: boolean }) 
             className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm"
             style={{ background: 'rgba(255,255,255,0.03)' }}
           >
-            <span
-              className="pay-mark pay-mark--sm shrink-0"
-              style={{ '--pay-mark': PAYMENT_STATE_COLORS[member.payment] } as React.CSSProperties}
-              title={PAYMENT_STATE_LABELS[member.payment]}
-              role="img"
-              aria-label={PAYMENT_STATE_LABELS[member.payment]}
-            >
-              <PaymentIcon state={member.payment} size={12} />
-            </span>
+            {member.payment ? (
+              <span
+                className="pay-mark pay-mark--sm shrink-0"
+                style={{ '--pay-mark': PAYMENT_STATE_COLORS[member.payment] } as React.CSSProperties}
+                title={PAYMENT_STATE_LABELS[member.payment]}
+                role="img"
+                aria-label={PAYMENT_STATE_LABELS[member.payment]}
+              >
+                <PaymentIcon state={member.payment} size={12} />
+              </span>
+            ) : (
+              // Their proof's status is still on its way from the payments service.
+              <Skeleton className="shrink-0" style={{ width: 22, height: 22, borderRadius: '50%' }} />
+            )}
             <span className="min-w-0 flex-1 truncate text-white/80">
               {member.user.name} {member.user.lastName}
             </span>

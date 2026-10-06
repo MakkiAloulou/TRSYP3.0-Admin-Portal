@@ -1,11 +1,16 @@
 import type { Metadata } from 'next';
 import { getTeamsByActivity, getParticipantsByActivity } from '../team-data';
-import { TeamsGrid } from '../teams-grid';
+import { getAllProofs } from '@/lib/payment-proofs';
+import { StreamedTeamsGrid } from '../teams-grid';
 import { TeamExportButton } from '../team-export-button';
 
 export const metadata: Metadata = { title: 'Challenge teams' };
 
 export default async function ChallengeTeamsPage() {
+  // The member icons need the payments service; start it with the database
+  // queries so the streamed grid finds it already on its way.
+  void getAllProofs();
+
   const [teams, participants] = await Promise.all([
     getTeamsByActivity('CHALLENGE'),
     getParticipantsByActivity('CHALLENGE'),
@@ -23,7 +28,7 @@ export default async function ChallengeTeamsPage() {
         <TeamExportButton activity="CHALLENGE" participants={participants} />
       </div>
 
-      <TeamsGrid teams={teams} />
+      <StreamedTeamsGrid teams={teams} />
     </div>
   );
 }

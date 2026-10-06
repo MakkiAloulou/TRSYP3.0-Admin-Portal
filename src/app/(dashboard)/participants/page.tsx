@@ -1,12 +1,9 @@
 import type { Metadata } from 'next';
 import { prisma } from '@/lib/prisma';
 import { withCheckerNames } from '@/lib/ieee-checkers';
-import { apiFetch } from '@/lib/trsyp-api';
-import { latestProofPerParticipant, type PaymentProofRow } from '@/lib/payment';
-import { ParticipantsTable } from './participants-table';
-
-/** Generous enough to cover every participant's full submission history. */
-const PROOFS_TAKE = 1000;
+import { PROOFS_TAKE, getAllProofs } from '@/lib/payment-proofs';
+import { latestProofPerParticipant } from '@/lib/payment';
+import { ParticipantsTable, type PaymentsInfo } from './participants-table';
 
 export const metadata: Metadata = { title: 'Participants' };
 
@@ -18,8 +15,12 @@ export default async function ParticipantsPage() {
   // Pending proofs must come from the API — `paid` alone cannot distinguish
   // "awaiting review" from "nothing submitted", and a proof's status is not a
   // shape this dashboard should be reading out of the payment tables directly.
-  const [participants, pendingProofs] = await Promise.all([
-    prisma.participant.findMany({
+  //
+  // The page waits only for the database. The proofs go to the table as a
+  // promise, so a slow payments service delays the payment icons, not the page.
+  const payments = loadPaymentsInfo();
+
+  const participants = await prisma.participant.findMany({
       orderBy: { createdAt: 'desc' },
       select: {
         id: true,
@@ -85,42 +86,15 @@ export default async function ParticipantsPage() {
           },
         },
       },
-    }),
-    // Every proof, not just pending ones: a participant's status follows their
-    // most recent submission, so the history has to be collapsed before asking
-    // whether they are awaiting review. Same rule the queue page applies.
-    apiFetch<{ data: PaymentProofRow[]; total: number }>(`/payment/admin/proofs?take=${PROOFS_TAKE}`),
-  ]);
-
-  // A failed lookup must not take the whole page down — every row falls back to
-  // Paid / Not Paid — but it is called out below rather than degrading quietly,
-  // since a real pending proof would otherwise read as never submitted.
-  //
-  // The latest proof's status is what the column needs, not merely whether a
-  // pending one exists: a rejected participant who resubmits is Pending again,
-  // and one who never resubmits stays Rejected rather than Not Paid.
-  const latestProofByParticipant = new Map(
-    pendingProofs.ok
-      ? latestProofPerParticipant(pendingProofs.data.data).map((proof) => [
-          proof.participantId,
-          { id: proof.id, status: proof.status },
-        ])
-      : [],
-  );
-
-  // If the history ever outgrows the fetch, the column would silently miss
-  // rows, so say so instead.
-  const truncated = pendingProofs.ok && pendingProofs.data.total > pendingProofs.data.data.length;
+  });
 
   // JSON round-trip keeps Server -> Client Component props simple: Dates
   // become ISO strings, which is all the modal needs for display anyway.
   // Admin ids in checked_by become names before anything reaches the client.
   const serialized = JSON.parse(JSON.stringify(await withCheckerNames(participants)));
 
-  const rows = serialized.map((participant: { id: string }) => ({
-    ...participant,
-    latestProof: latestProofByParticipant.get(participant.id) ?? null,
-  }));
+  // latestProof is filled in on the client once `payments` resolves.
+  const rows = serialized.map((participant: { id: string }) => ({ ...participant, latestProof: null }));
 
   return (
     <div className="space-y-4">
@@ -131,26 +105,33 @@ export default async function ParticipantsPage() {
         </p>
       </div>
 
-      {!pendingProofs.ok && (
-        <div className="pay-banner">
-          <span aria-hidden>!</span>
-          <span>
-            Payment status could not be loaded ({pendingProofs.message}) &mdash; rows below show only Paid or Not
-            paid, so a pending submission will look unpaid.
-          </span>
-        </div>
-      )}
-
-      {truncated && (
-        <div className="pay-banner">
-          <span aria-hidden>!</span>
-          <span>
-            More than {PROOFS_TAKE} proofs exist; some rows may show as Not paid.
-          </span>
-        </div>
-      )}
-
-      <ParticipantsTable participants={rows} />
+      <ParticipantsTable participants={rows} payments={payments} />
     </div>
   );
+}
+
+/**
+ * Each participant's newest proof, keyed by participant. Every proof is read,
+ * not just pending ones: a participant's status follows their most recent
+ * submission (a rejected participant who resubmits is Pending again), so the
+ * history has to be collapsed first. Same rule the queue page applies.
+ */
+async function loadPaymentsInfo(): Promise<PaymentsInfo> {
+  const result = await getAllProofs();
+  // A failed lookup must not take the page down — rows fall back to Paid /
+  // Not paid — but the table calls it out rather than degrading quietly.
+  if (!result.ok) return { ok: false, message: result.message };
+
+  return {
+    ok: true,
+    latest: Object.fromEntries(
+      latestProofPerParticipant(result.data.data).map((proof) => [
+        proof.participantId,
+        { id: proof.id, status: proof.status },
+      ]),
+    ),
+    // If the history ever outgrows the fetch, the column would silently miss
+    // rows, so the table says so instead.
+    truncatedAt: result.data.total > result.data.data.length ? PROOFS_TAKE : null,
+  };
 }

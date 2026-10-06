@@ -37,6 +37,18 @@ export function TableSkeleton({ rows = 6, label }: { rows?: number; label: strin
   );
 }
 
+/** A stat tile: label, figure, then the line under it. Used by the overview's
+ *  loading page and by the tiles that stream in after it. */
+export function StatTileSkeleton() {
+  return (
+    <div className="admin-card viz-tile">
+      <Skeleton className="skeleton-text" style={{ width: '45%' }} />
+      <Skeleton style={{ width: '35%', height: 28, marginTop: 10 }} />
+      <Skeleton className="skeleton-text" style={{ width: '70%', marginTop: 10 }} />
+    </div>
+  );
+}
+
 /** A chart card: a title line, a subtitle line, then the chart's area. */
 export function ChartCardSkeleton({ height, children }: { height?: number; children?: ReactNode }) {
   return (
