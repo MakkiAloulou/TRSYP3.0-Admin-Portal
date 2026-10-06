@@ -84,6 +84,14 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const total = matching.length;
   const proofs = matching.slice(skip, skip + take);
   const pending = current.filter((proof) => proof.status === 'PENDING').length;
+
+  // Every tab's count, so the filters say how much is in each queue before
+  // anyone opens it.
+  const counts = Object.fromEntries([
+    ...PAYMENT_PROOF_STATUSES.map((s) => [s, current.filter((proof) => proof.status === s).length]),
+    ['ALL', current.length],
+  ]) as Record<PaymentProofStatus | 'ALL', number>;
+
   const truncated = result.data.total > result.data.data.length;
 
   return (
@@ -111,6 +119,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         skip={skip}
         take={take}
         status={status}
+        counts={counts}
         focusProofId={params.proof}
       />
     </div>

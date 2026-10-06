@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import {
   METHOD_LABELS,
   PAYMENT_PROOF_STATUSES,
+  PAYMENT_STATE_COLORS,
   REJECTION_REASON_MAX,
   STATUS_LABELS,
   formatAmount,
@@ -14,9 +15,11 @@ import {
   validateRejectionReason,
   type PaymentProofRow,
   type PaymentProofStatus,
+  type PaymentState,
 } from '@/lib/payment';
 import { useEscapeKey } from '@/lib/use-escape-key';
 import { ModalPresence } from '../modal-presence';
+import { PaymentIcon } from '../payment-icon';
 import { approveProof, getReceiptUrl, rejectProof } from './actions';
 
 type Props = {
@@ -25,11 +28,13 @@ type Props = {
   skip: number;
   take: number;
   status: PaymentProofStatus | 'ALL';
+  /** How many participants sit in each tab. */
+  counts: Record<PaymentProofStatus | 'ALL', number>;
   /** Deep link from the participants page — highlights that row on arrival. */
   focusProofId?: string;
 };
 
-export function PaymentsTable({ proofs, total, skip, take, status, focusProofId }: Props) {
+export function PaymentsTable({ proofs, total, skip, take, status, counts, focusProofId }: Props) {
   const router = useRouter();
 
   // Actions hand back the updated proof, so a review updates one row in place
@@ -50,6 +55,9 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
   // The row a review just changed, tinted briefly so the reviewer sees which one moved.
   const [justReviewedId, setJustReviewedId] = useState<string | null>(null);
+  // Read once per visit: "3 days ago" stays put while the page is open, and
+  // the clock is never read during render.
+  const [now] = useState(() => Date.now());
 
   function applyUpdate(updated: PaymentProofRow) {
     setRows((current) => current.map((row) => (row.id === updated.id ? updated : row)));
@@ -133,17 +141,27 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
         </div>
       )}
 
-      <StatusFilters active={status} take={take} />
+      <StatusFilters active={status} take={take} counts={counts} />
 
       <div className="admin-card mt-4 overflow-x-auto">
-        <table className="min-w-full text-sm">
+        {/* Fixed layout, same as the participants table: each column keeps its
+            planned share whatever the rows on this page contain. */}
+        <table className="proof-table text-sm">
+          <colgroup>
+            <col style={{ width: '30%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '14%' }} />
+            <col style={{ width: '9%' }} />
+            <col style={{ width: '19%' }} />
+          </colgroup>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(0,232,122,0.12)' }}>
               <Th>Participant</Th>
-              <Th>Price</Th>
+              <Th>Fee</Th>
               <Th>Submitted</Th>
               <Th>Receipt</Th>
-              <Th>Status</Th>
+              <Th align="center">Status</Th>
               <Th align="right">Review</Th>
             </tr>
           </thead>
@@ -163,6 +181,7 @@ export function PaymentsTable({ proofs, total, skip, take, status, focusProofId 
                 error={rowError?.id === proof.id ? rowError.message : null}
                 focused={proof.id === focusProofId}
                 justReviewed={proof.id === justReviewedId}
+                now={now}
                 onView={() => handleViewReceipt(proof)}
                 onApprove={() => setConfirming(proof)}
                 onReject={() => setRejecting(proof)}
@@ -209,6 +228,7 @@ function ProofRow({
   error,
   focused,
   justReviewed,
+  now,
   onView,
   onApprove,
   onReject,
@@ -218,6 +238,7 @@ function ProofRow({
   error: string | null;
   focused: boolean;
   justReviewed: boolean;
+  now: number;
   onView: () => void;
   onApprove: () => void;
   onReject: () => void;
@@ -225,6 +246,7 @@ function ProofRow({
   const ref = useRef<HTMLTableRowElement>(null);
   const cashInPerson = isCashWithoutReceipt(proof);
   const pending = proof.status === 'PENDING';
+  const hasReason = proof.status === 'REJECTED' && Boolean(proof.rejectionReason);
 
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -234,36 +256,59 @@ function ProofRow({
     <>
       <tr
         ref={ref}
-        className={cashInPerson ? 'pay-row--cash' : undefined}
         data-reviewed={justReviewed ? proof.status : undefined}
         style={{
-          borderBottom: error ? 'none' : '1px solid rgba(255,255,255,0.05)',
+          // The reason / error line below belongs to this row, so the divider
+          // moves under it.
+          borderBottom: error || hasReason ? 'none' : '1px solid rgba(255,255,255,0.05)',
           background: focused ? 'rgba(0,232,122,0.06)' : undefined,
         }}
       >
-        <Td>
-          <div className="font-medium text-white">{proof.participantName}</div>
-          <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>{proof.participantEmail}</div>
+        <Td className="proof-cell-who">
+          <div className="truncate font-medium text-white" title={proof.participantName}>
+            {proof.participantName}
+          </div>
+          <div
+            className="truncate"
+            style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}
+            title={proof.participantEmail}
+          >
+            {proof.participantEmail}
+          </div>
         </Td>
-        <Td style={{ fontVariantNumeric: 'tabular-nums' }}>{formatAmount(proof.currentFee)}</Td>
-        <Td style={{ color: 'rgba(255,255,255,0.5)' }}>{formatDateTime(proof.createdAt)}</Td>
-        <Td>
+        <Td className="proof-cell-fee">
+          <div className="text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>
+            {formatAmount(proof.currentFee)}
+          </div>
+          <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12 }}>{METHOD_LABELS[proof.method]}</div>
+        </Td>
+        <Td className="proof-cell-when">
+          <WaitTime proof={proof} now={now} />
+        </Td>
+        <Td className="proof-cell-receipt">
           {cashInPerson ? (
             // Handed to a committee member in person: there is no file to open,
             // so no receipt button is rendered at all.
-            <span className="pay-no-receipt">Paid in person</span>
+            <span className="pay-no-receipt">Handed in person</span>
           ) : proof.hasFile ? (
-            <button type="button" className="pay-link" onClick={onView} disabled={busy}>
-              {busy ? 'Opening...' : (proof.fileName ?? 'View receipt')}
+            <button
+              type="button"
+              className="proof-file"
+              onClick={onView}
+              disabled={busy}
+              title={proof.fileName ?? undefined}
+            >
+              <FileIcon pdf={isPdfReceipt(proof)} />
+              {busy ? 'Opening…' : 'View'}
             </button>
           ) : (
             <span className="pay-no-receipt">No file</span>
           )}
         </Td>
-        <Td>
-          <StatusBadge status={proof.status} />
+        <Td className="proof-cell-status" align="center">
+          <StatusMark status={proof.status} />
         </Td>
-        <Td align="right">
+        <Td className="proof-cell-review" align="right">
           {pending ? (
             <div className="pay-actions">
               <button type="button" className="pay-btn-approve" onClick={onApprove} disabled={busy}>
@@ -274,23 +319,25 @@ function ProofRow({
               </button>
             </div>
           ) : (
-            <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 12 }}>
+            <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: 12 }}>
               {proof.reviewedAt ? `Reviewed ${formatDateTime(proof.reviewedAt)}` : 'Reviewed'}
             </span>
           )}
         </Td>
       </tr>
 
-      {proof.status === 'REJECTED' && proof.rejectionReason && (
-        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-          <td colSpan={6} className="px-4 pb-3" style={{ color: 'var(--color-pink)', fontSize: 12 }}>
-            Reason sent to participant: &ldquo;{proof.rejectionReason}&rdquo;
+      {hasReason && (
+        <tr className="proof-subrow" style={{ borderBottom: error ? 'none' : '1px solid rgba(255,255,255,0.05)' }}>
+          <td colSpan={6} className="px-4 pb-3">
+            <span className="proof-reason">
+              <span style={{ color: 'rgba(255,255,255,0.45)' }}>Reason sent:</span> {proof.rejectionReason}
+            </span>
           </td>
         </tr>
       )}
 
       {error && (
-        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+        <tr className="proof-subrow" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
           <td colSpan={6} className="px-4 pb-3">
             <span className="pay-error">{error}</span>
           </td>
@@ -300,38 +347,125 @@ function ProofRow({
   );
 }
 
-function StatusBadge({ status }: { status: PaymentProofStatus }) {
-  const variant =
-    status === 'APPROVED'
-      ? 'admin-badge--green'
-      : status === 'REJECTED'
-        ? 'admin-badge--pink'
-        : 'admin-badge--amber';
-  return <span className={`admin-badge ${variant}`}>{STATUS_LABELS[status]}</span>;
+/** A proof's status in the participants table's icon language. All three
+ *  share the same tinted ring, so no single status outshouts the queue. */
+const PROOF_ICON_STATE: Record<PaymentProofStatus, PaymentState> = {
+  APPROVED: 'PAID',
+  PENDING: 'PENDING',
+  REJECTED: 'REJECTED',
+};
+
+function StatusMark({ status }: { status: PaymentProofStatus }) {
+  const state = PROOF_ICON_STATE[status];
+  return (
+    <span
+      className="pay-mark"
+      style={{ '--pay-mark': PAYMENT_STATE_COLORS[state] } as React.CSSProperties}
+      title={STATUS_LABELS[status]}
+      role="img"
+      aria-label={STATUS_LABELS[status]}
+    >
+      <PaymentIcon state={state} size={16} />
+    </span>
+  );
 }
 
-function StatusFilters({ active, take }: { active: PaymentProofStatus | 'ALL'; take: number }) {
+/** Proofs waiting longer than this are flagged, so the oldest get seen first. */
+const LONG_WAIT_HOURS = 48;
+
+/**
+ * How long ago the proof came in, which is what a reviewer weighs; the exact
+ * time is on hover. A pending proof past LONG_WAIT_HOURS turns amber.
+ */
+function WaitTime({ proof, now }: { proof: PaymentProofRow; now: number }) {
+  const hours = (now - Date.parse(proof.createdAt)) / 3_600_000;
+  const overdue = proof.status === 'PENDING' && hours >= LONG_WAIT_HOURS;
+
+  return (
+    <span
+      className="proof-when"
+      data-overdue={overdue ? '' : undefined}
+      title={formatDateTime(proof.createdAt)}
+      // Relative to now, so server and browser can disagree by a minute.
+      suppressHydrationWarning
+    >
+      {timeAgo(hours)}
+    </span>
+  );
+}
+
+function timeAgo(hours: number) {
+  const minutes = Math.floor(hours * 60);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  if (hours < 24) return `${Math.floor(hours)} h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? 'Yesterday' : `${days} days ago`;
+}
+
+/** A photo for image receipts, a page for PDFs — what will open, before it does. */
+function FileIcon({ pdf }: { pdf: boolean }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      {pdf ? (
+        <>
+          <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+          <path d="M14 3v5h5M9 13h6M9 17h4" />
+        </>
+      ) : (
+        <>
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <circle cx="9" cy="10" r="1.75" />
+          <path d="M21 16l-5-5-9 9" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function StatusFilters({
+  active,
+  take,
+  counts,
+}: {
+  active: PaymentProofStatus | 'ALL';
+  take: number;
+  counts: Record<PaymentProofStatus | 'ALL', number>;
+}) {
   const options: Array<{ value: PaymentProofStatus | 'ALL'; label: string }> = [
     ...PAYMENT_PROOF_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
     { value: 'ALL', label: 'All' },
   ];
 
   return (
-    <div className="pay-filters">
+    <nav className="pay-filters" aria-label="Payment queues">
       {options.map((option) => (
         <Link
           key={option.value}
           href={`/payments?status=${option.value}&take=${take}`}
           className="pay-filter"
           data-active={option.value === active ? '' : undefined}
+          aria-current={option.value === active ? 'page' : undefined}
           // Each filter is a fresh backend query; prefetching on hover would
           // fire them for filters nobody opens.
           prefetch={false}
         >
           {option.label}
+          <span className="pay-filter-count">{counts[option.value]}</span>
         </Link>
       ))}
-    </div>
+    </nav>
   );
 }
 
@@ -541,11 +675,17 @@ function RejectModal({
   );
 }
 
-function Th({ children, align }: { children: React.ReactNode; align?: 'right' }) {
+type Align = 'left' | 'center' | 'right';
+
+// Alignment is a class rather than an inline style, so the stylesheet's
+// mobile card layout can override it.
+const ALIGN_CLASSES: Record<Align, string> = { left: 'text-left', center: 'text-center', right: 'text-right' };
+
+function Th({ children, align = 'left' }: { children: React.ReactNode; align?: Align }) {
   return (
     <th
-      className="px-4 py-3 text-[11px] font-semibold uppercase"
-      style={{ color: 'rgba(255,255,255,0.4)', letterSpacing: '0.08em', textAlign: align ?? 'left' }}
+      className={`px-4 py-3 text-[11px] font-semibold uppercase ${ALIGN_CLASSES[align]}`}
+      style={{ color: 'rgba(255,255,255,0.4)', letterSpacing: '0.08em' }}
     >
       {children}
     </th>
@@ -556,15 +696,15 @@ function Td({
   children,
   className,
   style,
-  align,
+  align = 'left',
 }: {
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
-  align?: 'right';
+  align?: Align;
 }) {
   return (
-    <td className={`px-4 py-3 ${className ?? ''}`} style={{ textAlign: align ?? 'left', ...style }}>
+    <td className={`px-4 py-3 ${ALIGN_CLASSES[align]} ${className ?? ''}`} style={style}>
       {children}
     </td>
   );
