@@ -2254,27 +2254,32 @@ tr[data-reviewed='REJECTED'] {
   padding: 28px;
 }
 
-/* Name and email on the left, membership on the right. */
+/* A profile card: face on top, then name and email, then membership —
+   centred, so nothing is squeezed side by side at any width. */
 .pmodal-head {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding-right: 32px; /* clear of the close button */
-}
-
-.pmodal-head .part-member {
-  flex-shrink: 0;
-  margin-top: 4px; /* centres the chips on the name's first line */
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
 }
 
 .pmodal-head .p-avatar {
-  margin-top: -4px; /* centres the face on the name and email together */
+  width: 72px;
+  height: 72px;
+}
+
+.pmodal-head .p-avatar--initials {
+  font-size: 22px;
 }
 
 .pmodal-who {
-  flex: 1;
+  width: 100%;
   min-width: 0;
+}
+
+.pmodal-head .part-member {
+  margin-top: 2px;
 }
 
 /* The participant's face: the main site's hybrid avatar, or their initials. */
@@ -2427,6 +2432,7 @@ tr[data-reviewed='REJECTED'] {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   margin-top: 12px;
 }
@@ -2463,6 +2469,21 @@ tr[data-reviewed='REJECTED'] {
 .pmodal-pay-link {
   margin-left: auto;
   font-size: 13px;
+}
+
+/* The link takes the strip's own colour — amber on pending, red on
+   rejected, green on paid — instead of the standard blue, which clashed. */
+.pmodal-pay a.pmodal-pay-link {
+  font-weight: 600;
+  color: var(--pay-mark);
+  text-decoration-color: color-mix(in srgb, var(--pay-mark) 45%, transparent);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pmodal-pay a.pmodal-pay-link:hover {
+    color: #ffffff;
+    text-decoration-color: currentColor;
+  }
 }
 
 .pmodal-section {
@@ -2547,13 +2568,24 @@ tr[data-reviewed='REJECTED'] {
   color: var(--color-green);
 }
 
-@media (max-width: 480px) {
+/* Phones: a little tighter. The details keep two columns, which keeps the
+   popup short. */
+@media (max-width: 560px) {
   .pmodal {
-    padding: 22px 18px;
+    padding: 24px 18px 22px;
+  }
+
+  .pmodal-pay {
+    margin-top: 18px;
+  }
+
+  .pmodal-section {
+    margin-top: 18px;
+    padding-top: 16px;
   }
 
   .pmodal-grid {
-    grid-template-columns: minmax(0, 1fr);
+    gap: 12px 16px;
   }
 }
 
