@@ -230,8 +230,14 @@ async function PaymentTiles({ participants }: { participants: OverviewParticipan
       />
       <StatTile
         label="Fees collected"
-        value={`${formatTnd(collected)} TND`}
-        sub={`of ${formatTnd(expected)} TND · ${paidCount} of ${participants.length} paid`}
+        value={
+          <>
+            {formatTnd(collected)}
+            <span className="viz-tile-unit">TND</span>
+          </>
+        }
+        // Most useful first, so a narrow screen cuts the least of it.
+        sub={`${paidCount} of ${participants.length} paid · ${formatTnd(expected)} TND expected`}
       />
     </>
   );

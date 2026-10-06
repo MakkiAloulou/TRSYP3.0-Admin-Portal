@@ -32,7 +32,8 @@ export function StatTile({
   cta,
 }: {
   label: string;
-  value: string | number;
+  /** A figure, or a figure with a unit (see .viz-tile-unit). */
+  value: React.ReactNode;
   sub?: string;
   accent?: string;
   /** Makes the whole tile a link — for numbers someone acts on. */
