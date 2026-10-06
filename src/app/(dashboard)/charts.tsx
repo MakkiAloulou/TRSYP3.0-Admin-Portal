@@ -78,8 +78,8 @@ export function ChartCard({
   children,
 }: {
   title: string;
-  subtitle?: string;
-  /** A headline figure at the right of the title (e.g. "+14 this week"). */
+  subtitle?: React.ReactNode;
+  /** A control or headline figure at the right of the title (e.g. "+14 this week"). */
   aside?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -329,11 +329,64 @@ export function Meter({
   );
 }
 
-/* ── Trend over time: cumulative area + line ────────────── */
+/* ── Trend over time: cumulative area, or daily bars ─────── */
 
 export type TrendPoint = { date: string; total: number; daily: number };
 
-export function TrendChart({ points }: { points: TrendPoint[] }) {
+type TrendMode = 'cumulative' | 'daily';
+
+const TREND_MODES: { value: TrendMode; label: string }[] = [
+  { value: 'cumulative', label: 'Cumulative' },
+  { value: 'daily', label: 'Daily' },
+];
+
+/**
+ * The registrations card: the chart, with its Cumulative | Daily switch in the
+ * header where a chart's controls are looked for, and the past week's count
+ * in the subtitle.
+ */
+export function RegistrationsCard({ points, lastWeek }: { points: TrendPoint[]; lastWeek: number }) {
+  const [mode, setMode] = useState<TrendMode>('cumulative');
+
+  return (
+    <ChartCard
+      title="Registrations over time"
+      subtitle={
+        <>
+          <span className="viz-sub-figure" data-zero={lastWeek === 0 ? '' : undefined}>
+            +{lastWeek}
+          </span>{'  '}
+          in the last 7 days
+        </>
+      }
+      aside={
+        points.length >= 2 && (
+          <div className="viz-seg" role="group" aria-label="Chart view">
+            {TREND_MODES.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                className="viz-seg-btn"
+                aria-pressed={mode === option.value}
+                onClick={() => setMode(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        )
+      }
+    >
+      <TrendChart points={points} mode={mode} />
+    </ChartCard>
+  );
+}
+
+/**
+ * Registrations over time, two ways: the running total as a filled line (how
+ * far along), or each day's sign-ups as bars (when they came in).
+ */
+export function TrendChart({ points, mode }: { points: TrendPoint[]; mode: TrendMode }) {
   const [hover, setHover] = useState<number | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
@@ -359,22 +412,30 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
     );
   }
 
+  const daily = mode === 'daily';
+  const value = (p: TrendPoint) => (daily ? p.daily : p.total);
+
   const W = Math.max(width, 260);
   const H = W < 520 ? 180 : 230;
   const PAD = { top: 12, right: 12, bottom: 24, left: 38 };
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
 
-  const max = Math.max(...points.map((p) => p.total));
-  const niceMax = niceCeil(max);
+  const niceMax = niceCeil(Math.max(...points.map(value)));
 
-  const x = (i: number) => PAD.left + (i / (points.length - 1)) * plotW;
+  // The line runs edge to edge; bars each take an equal slot, centred in it.
+  const slot = plotW / points.length;
+  const x = (i: number) =>
+    daily ? PAD.left + (i + 0.5) * slot : PAD.left + (i / (points.length - 1)) * plotW;
   const y = (v: number) => PAD.top + plotH - (v / niceMax) * plotH;
+  const baseline = PAD.top + plotH;
 
   const line = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.total).toFixed(1)}`).join(' ');
-  const area = `${line} L${x(points.length - 1).toFixed(1)},${PAD.top + plotH} L${x(0).toFixed(1)},${PAD.top + plotH} Z`;
+  const area = `${line} L${x(points.length - 1).toFixed(1)},${baseline} L${x(0).toFixed(1)},${baseline} Z`;
+  const barW = Math.max(2, Math.min(18, slot * 0.68));
 
-  const ticks = [0, niceMax / 2, niceMax];
+  // Whole numbers only: a gridline at "1.5 registrations" reads as a bug.
+  const ticks = [0, niceMax / 2, niceMax].filter(Number.isInteger);
   const active = hover === null ? null : points[hover];
 
   // Evenly spaced date labels, thinned out so they never collide.
@@ -386,9 +447,12 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
   function handleMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = (e.clientX - rect.left - PAD.left) / plotW;
-    const i = Math.round(ratio * (points.length - 1));
+    const i = daily ? Math.floor(ratio * points.length) : Math.round(ratio * (points.length - 1));
     setHover(Math.min(Math.max(i, 0), points.length - 1));
   }
+
+  const last = points[points.length - 1];
+  const busiest = points.reduce((best, p) => (p.daily > best.daily ? p : best), points[0]);
 
   return (
     <div className="viz-trend" ref={wrapper}>
@@ -400,14 +464,20 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
         onMouseMove={handleMove}
         onMouseLeave={() => setHover(null)}
         role="img"
-        aria-label={`Cumulative registrations, ${points[0].date} to ${points[points.length - 1].date}, ending at ${
-          points[points.length - 1].total
-        }`}
+        aria-label={
+          daily
+            ? `Registrations per day, ${points[0].date} to ${last.date}; busiest day ${busiest.date} with ${busiest.daily}`
+            : `Cumulative registrations, ${points[0].date} to ${last.date}, ending at ${last.total}`
+        }
       >
         <defs>
           <linearGradient id="vizTrendFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--viz-1)" stopOpacity="0.28" />
             <stop offset="100%" stopColor="var(--viz-1)" stopOpacity="0" />
+          </linearGradient>
+          <linearGradient id="vizTrendBar" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--viz-1)" stopOpacity="0.95" />
+            <stop offset="100%" stopColor="var(--viz-1)" stopOpacity="0.35" />
           </linearGradient>
         </defs>
 
@@ -428,16 +498,38 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
           </g>
         ))}
 
-        <path d={area} fill="url(#vizTrendFill)" />
-        <path
-          d={line}
-          fill="none"
-          stroke="var(--viz-1)"
-          strokeWidth="2"
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          vectorEffect="non-scaling-stroke"
-        />
+        {/* Keyed by mode so switching replays the entrance. */}
+        {daily ? (
+          <g key="daily" className="viz-trend-bars" style={{ transformOrigin: `0 ${baseline}px` }}>
+            {points.map((p, i) =>
+              p.daily > 0 ? (
+                <rect
+                  key={i}
+                  x={x(i) - barW / 2}
+                  y={y(p.daily)}
+                  width={barW}
+                  height={baseline - y(p.daily)}
+                  rx={Math.min(3, barW / 2)}
+                  fill="url(#vizTrendBar)"
+                  opacity={hover === null || hover === i ? 1 : 0.35}
+                />
+              ) : null,
+            )}
+          </g>
+        ) : (
+          <g key="cumulative" className="viz-trend-area">
+            <path d={area} fill="url(#vizTrendFill)" />
+            <path
+              d={line}
+              fill="none"
+              stroke="var(--viz-1)"
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
+        )}
 
         {hover !== null && (
           <g>
@@ -445,19 +537,21 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
               x1={x(hover)}
               x2={x(hover)}
               y1={PAD.top}
-              y2={PAD.top + plotH}
+              y2={baseline}
               stroke="rgba(255,255,255,0.25)"
               strokeWidth="1"
               vectorEffect="non-scaling-stroke"
             />
-            <circle
-              cx={x(hover)}
-              cy={y(points[hover].total)}
-              r="5"
-              fill="var(--viz-1)"
-              stroke="var(--color-bg)"
-              strokeWidth="2"
-            />
+            {!daily && (
+              <circle
+                cx={x(hover)}
+                cy={y(points[hover].total)}
+                r="5"
+                fill="var(--viz-1)"
+                stroke="var(--color-bg)"
+                strokeWidth="2"
+              />
+            )}
           </g>
         )}
 
@@ -474,17 +568,32 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
         ))}
       </svg>
 
+      {/* Leads with the number the current view is about. */}
       <div className="viz-trend-readout">
         {active ? (
-          <>
-            <span className="viz-trend-readout-date">{active.date}</span>
-            <span className="viz-trend-readout-total">{active.total} total</span>
-            <span className="viz-trend-readout-daily">
-              {active.daily > 0 ? `+${active.daily} that day` : 'no new signups'}
-            </span>
-          </>
+          daily ? (
+            <>
+              <span className="viz-trend-readout-date">{active.date}</span>
+              <span className="viz-trend-readout-total">
+                {active.daily > 0 ? `+${active.daily} that day` : 'no new signups'}
+              </span>
+              <span className="viz-trend-readout-daily">{active.total} total</span>
+            </>
+          ) : (
+            <>
+              <span className="viz-trend-readout-date">{active.date}</span>
+              <span className="viz-trend-readout-total">{active.total} total</span>
+              <span className="viz-trend-readout-daily">
+                {active.daily > 0 ? `+${active.daily} that day` : 'no new signups'}
+              </span>
+            </>
+          )
+        ) : daily ? (
+          <span className="viz-trend-readout-hint">
+            Busiest day: {busiest.date}, +{busiest.daily}
+          </span>
         ) : (
-          <span className="viz-trend-readout-hint">Hover the chart for a daily breakdown</span>
+          <span className="viz-trend-readout-hint">Hover or tap the chart for a daily breakdown</span>
         )}
       </div>
     </div>

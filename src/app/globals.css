@@ -745,22 +745,15 @@ button {
   text-align: right;
 }
 
-.viz-card-aside-value {
-  display: block;
-  font-size: 22px;
-  line-height: 1.1;
+/* A figure inside a card's subtitle, e.g. "+14 in the last 7 days". */
+.viz-sub-figure {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--color-green);
 }
 
-.viz-card-aside-value[data-zero] {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.viz-card-aside-label {
-  font-size: 12px;
-  color: var(--viz-ink-muted);
+.viz-sub-figure[data-zero] {
+  color: rgba(255, 255, 255, 0.6);
 }
 
 /* A chart on one half, a stack of smaller ones on the other. */
@@ -1278,6 +1271,97 @@ button {
 .viz-trend-svg {
   display: block;
   max-width: 100%;
+}
+
+/* Phones: the header's control drops under the title instead of squeezing it. */
+@media (max-width: 560px) {
+  .viz-card-top {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .viz-card-aside {
+    text-align: left;
+  }
+
+  .viz-card-aside .viz-seg {
+    display: flex;
+  }
+
+  .viz-card-aside .viz-seg-btn {
+    flex: 1;
+  }
+}
+
+/* Cumulative | Daily: a small two-way switch in the card's header. */
+.viz-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.viz-seg-btn {
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.55);
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+
+.viz-seg-btn[aria-pressed='true'] {
+  color: var(--color-green);
+  background: rgba(0, 232, 122, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(0, 232, 122, 0.3);
+}
+
+.viz-seg-btn:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .viz-seg-btn[aria-pressed='false']:hover {
+    color: #ffffff;
+  }
+}
+
+/* Switching views: bars rise from the baseline, the area fades in. */
+.viz-trend-bars {
+  animation: vizBarsRise 320ms var(--ease-out);
+}
+
+.viz-trend-bars rect {
+  transition: opacity 150ms ease;
+}
+
+.viz-trend-area {
+  animation: vizAreaFade 260ms ease;
+}
+
+@keyframes vizBarsRise {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+@keyframes vizAreaFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viz-trend-bars,
+  .viz-trend-area {
+    animation: none;
+  }
 }
 
 .viz-axis-text {

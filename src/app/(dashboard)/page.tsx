@@ -10,7 +10,7 @@ import {
   latestProofPerParticipant,
   type PaymentState,
 } from '@/lib/payment';
-import { ChartCard, DonutBreakdown, RankedBars, ShareBar, StatTile, TrendChart, VIZ, type TrendPoint } from './charts';
+import { ChartCard, DonutBreakdown, RankedBars, ShareBar, StatTile, RegistrationsCard, VIZ, type TrendPoint } from './charts';
 import { ChartCardSkeleton, Skeleton, StatTileSkeleton } from './loading-skeletons';
 import { RegionMap } from './region-map';
 import { regionForBranch } from '@/lib/student-branch-region';
@@ -132,20 +132,7 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <ChartCard
-        title="Registrations over time"
-        subtitle="Cumulative registrations since the first registration"
-        aside={
-          <>
-            <span className="viz-card-aside-value" data-zero={thisWeek === 0 ? '' : undefined}>
-              +{thisWeek}
-            </span>
-            <span className="viz-card-aside-label">in the last 7 days</span>
-          </>
-        }
-      >
-        <TrendChart points={trend} />
-      </ChartCard>
+      <RegistrationsCard points={trend} lastWeek={thisWeek} />
 
       <div className="viz-grid">
         <ChartCard title="Top student branches" subtitle="Ten largest delegations">
