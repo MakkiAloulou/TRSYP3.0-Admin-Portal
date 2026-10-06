@@ -5,16 +5,18 @@ import { DashboardHeader } from './dashboard-header';
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // A verified token's subject is the user id. getClaims checks the signature
+  // locally with asymmetric keys, so this costs no Auth round trip (see
+  // lib/supabase/middleware.ts); an invalid or expired token yields no claims.
+  const { data } = await supabase.auth.getClaims();
+  const userId = data?.claims.sub;
 
-  if (!user) {
+  if (!userId) {
     redirect('/login');
   }
 
   const admin = await prisma.admin.findUnique({
-    where: { supabaseId: user.id },
+    where: { supabaseId: userId },
     select: { id: true, name: true, lastName: true, position: true },
   });
 

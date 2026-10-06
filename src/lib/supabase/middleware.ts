@@ -29,7 +29,12 @@ export async function updateSession(request: NextRequest) {
 
   // Required: this call refreshes the session and must not be removed or
   // reordered relative to the response above, per Supabase's Next.js guide.
-  await supabase.auth.getUser();
+  //
+  // getClaims rather than getUser: with asymmetric JWT signing keys it checks
+  // the token's signature locally instead of asking the Auth server on every
+  // request (getUser always makes that round trip). With a legacy symmetric
+  // secret it falls back to the same server check, so it is never less safe.
+  await supabase.auth.getClaims();
 
   return response;
 }

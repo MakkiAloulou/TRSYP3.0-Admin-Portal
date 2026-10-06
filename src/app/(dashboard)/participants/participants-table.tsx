@@ -18,8 +18,9 @@ import {
   type PaymentProofStatus,
   type PaymentState,
 } from '@/lib/payment';
-import { deriveIeeeState, type IeeeVerification } from '@/lib/ieee-verification';
+import type { IeeeVerification } from '@/lib/ieee-verification';
 import { IeeeSection, useIeeeVerification } from './ieee-verify';
+import { getParticipantDetails } from './actions';
 
 type InternationalInfo = {
   dateOfBirth: string;
@@ -69,6 +70,33 @@ export type ParticipantRow = {
     active: boolean;
     createdAt: string;
   };
+};
+
+/**
+ * A participant as the table holds them: only what it shows, searches and
+ * filters on. The full record (ParticipantRow) is fetched when their details
+ * open or the list is exported — see participant-queries.ts.
+ */
+export type ParticipantListRow = Pick<
+  ParticipantRow,
+  | 'id'
+  | 'ieeeId'
+  | 'phone'
+  | 'paid'
+  | 'banned'
+  | 'isInternational'
+  | 'participantType'
+  | 'isRas'
+  | 'sb'
+  | 'country'
+  | 'memberships'
+  | 'latestProof'
+> & {
+  user: Pick<ParticipantRow['user'], 'name' | 'lastName' | 'email' | 'active'>;
+  /** Whether IEEE's stored answer still applies to the profile as it stands. */
+  ieeeVerified: boolean;
+  /** Only set by a re-check made during this visit (useIeeeVerification). */
+  ieeeVerification?: IeeeVerification | null;
 };
 
 /** The payments service's answer for this page, streamed in after the table. */
@@ -146,16 +174,16 @@ function urlForFilters(filters: Filters) {
 
 /** Read from the priced `participantType` / `isRas`, which an IEEE check
  *  writes through — so once a check has run, this is IEEE's answer. */
-function isIeee(p: ParticipantRow) {
+function isIeee(p: Pick<ParticipantRow, 'participantType'>) {
   return p.participantType !== 'NonIEEE';
 }
 
-function isRas(p: ParticipantRow) {
+function isRas(p: Pick<ParticipantRow, 'participantType' | 'isRas'>) {
   return isIeee(p) && p.isRas;
 }
 
 /** Everything the search box looks through, lowercased once per participant. */
-function searchableText(p: ParticipantRow) {
+function searchableText(p: ParticipantListRow) {
   return [
     p.user.name,
     p.user.lastName,
@@ -171,7 +199,7 @@ function searchableText(p: ParticipantRow) {
     .toLowerCase();
 }
 
-function matches(p: ParticipantRow, filters: Filters, haystack: string) {
+function matches(p: ParticipantListRow, filters: Filters, haystack: string) {
   const query = filters.query.trim().toLowerCase();
   if (query && !haystack.includes(query)) return false;
 
@@ -204,7 +232,7 @@ export function ParticipantsTable({
   participants,
   payments,
 }: {
-  participants: ParticipantRow[];
+  participants: ParticipantListRow[];
   /** Resolves once the payments service answers; the table shows meanwhile. */
   payments: Promise<PaymentsInfo>;
 }) {
@@ -238,6 +266,36 @@ export function ParticipantsTable({
 
   // Held by id so the open modal follows the row as its IEEE result arrives.
   const selected = selectedId ? (rows.find((p) => p.id === selectedId) ?? null) : null;
+
+  // Full records, fetched the first time each participant's details open and
+  // kept for the visit. The row stays the authority for what it carries — its
+  // payment, and any IEEE re-check made since — so those are laid over the top.
+  const [details, setDetails] = useState<Record<string, ParticipantRow>>({});
+  const [detailsError, setDetailsError] = useState<{ id: string; message: string } | null>(null);
+
+  function openDetails(id: string) {
+    setSelectedId(id);
+    setDetailsError(null);
+    if (details[id]) return;
+    void getParticipantDetails([id]).then((result) => {
+      if (result.ok && result.participants[0]) {
+        setDetails((current) => ({ ...current, [id]: result.participants[0] }));
+      } else {
+        setDetailsError({ id, message: result.ok ? 'This participant no longer exists.' : result.message });
+      }
+    });
+  }
+
+  const selectedFull: ParticipantRow | null =
+    selected && details[selected.id]
+      ? {
+          ...details[selected.id],
+          participantType: selected.participantType,
+          isRas: selected.isRas,
+          latestProof: selected.latestProof,
+          ...(selected.ieeeVerification !== undefined ? { ieeeVerification: selected.ieeeVerification } : {}),
+        }
+      : null;
 
   // Search text is rebuilt only when the list itself changes, not per keystroke.
   const haystacks = useMemo(
@@ -275,9 +333,23 @@ export function ParticipantsTable({
     applyFilters({ ...filters, [key]: value });
   }
 
-  function handleExport() {
+  // What the export button is doing, shown in its own label.
+  const [exportLabel, setExportLabel] = useState<string | null>(null);
+
+  async function handleExport() {
     // Exports what is on screen — filtering and then exporting is the point.
-    downloadCsv(buildParticipantsCsv(visible), participantsCsvFilename());
+    // The table holds only lean rows, so the full records are fetched here.
+    setExportLabel('Exporting…');
+    const result = await getParticipantDetails(visible.map((p) => p.id));
+    if (!result.ok) {
+      setExportLabel('Export failed');
+      setTimeout(() => setExportLabel(null), 2500);
+      return;
+    }
+    const byId = new Map(result.participants.map((p) => [p.id, p]));
+    const ordered = visible.map((p) => byId.get(p.id)).filter((p): p is ParticipantRow => Boolean(p));
+    downloadCsv(buildParticipantsCsv(ordered), participantsCsvFilename());
+    setExportLabel(null);
   }
 
   // What the copy button last did, shown in its own label for a moment.
@@ -338,9 +410,10 @@ export function ParticipantsTable({
             type="button"
             className="admin-btn-secondary part-toolbar-btn py-2 text-sm"
             onClick={handleExport}
-            disabled={visible.length === 0}
+            disabled={visible.length === 0 || exportLabel === 'Exporting…'}
+            aria-live="polite"
           >
-            Export CSV
+            {exportLabel ?? 'Export CSV'}
           </button>
         </div>
 
@@ -431,7 +504,7 @@ export function ParticipantsTable({
             {visible.map((participant) => (
               <tr
                 key={participant.id}
-                onClick={() => setSelectedId(participant.id)}
+                onClick={() => openDetails(participant.id)}
                 className="admin-row"
                 style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
               >
@@ -466,16 +539,20 @@ export function ParticipantsTable({
         {selected && (
           <ParticipantDetailModal
             participant={selected}
+            details={selectedFull}
+            detailsError={detailsError?.id === selected.id ? detailsError.message : null}
             paymentsReady={paymentsReady}
             onClose={() => setSelectedId(null)}
           >
-            <IeeeSection
-              participant={selected}
-              activity={ieee.activity[selected.id]}
-              failure={ieee.failures[selected.id]}
-              busy={ieee.busy}
-              onRecheck={() => ieee.recheck(selected.id)}
-            />
+            {selectedFull && (
+              <IeeeSection
+                participant={selectedFull}
+                activity={ieee.activity[selected.id]}
+                failure={ieee.failures[selected.id]}
+                busy={ieee.busy}
+                onRecheck={() => ieee.recheck(selected.id)}
+              />
+            )}
           </ParticipantDetailModal>
         )}
       </ModalPresence>
@@ -515,7 +592,7 @@ function Select({
  * their most recent proof. Tick, cross and clock are one round mark each; the
  * clock and the rejected button link through to the proof.
  */
-function PaymentStatus({ participant, ready }: { participant: ParticipantRow; ready: boolean }) {
+function PaymentStatus({ participant, ready }: { participant: ParticipantListRow; ready: boolean }) {
   // Paid comes from the database and is final; anything else depends on the
   // newest proof, which is still on its way from the payments service.
   if (!ready && !participant.paid) {
@@ -569,8 +646,11 @@ function PaymentStatus({ participant, ready }: { participant: ParticipantRow; re
  * RAS chip beside it for RAS members. The IEEE check behind it lives in the
  * participant's details.
  */
-function MembershipBadge({ participant: p }: { participant: ParticipantRow }) {
-  const source = deriveIeeeState(p) === 'UNVERIFIED' ? 'not verified with IEEE yet' : 'confirmed by IEEE';
+function MembershipBadge({ participant: p }: { participant: ParticipantListRow }) {
+  // A re-check made this visit is current by definition; otherwise the server
+  // worked out whether the stored answer still applies.
+  const verified = p.ieeeVerification ? true : p.ieeeVerified;
+  const source = verified ? 'confirmed by IEEE' : 'not verified with IEEE yet';
 
   if (!isIeee(p)) {
     return (
@@ -590,11 +670,17 @@ function MembershipBadge({ participant: p }: { participant: ParticipantRow }) {
 
 function ParticipantDetailModal({
   participant: p,
+  details: d,
+  detailsError,
   paymentsReady,
   onClose,
   children,
 }: {
-  participant: ParticipantRow;
+  /** The table's row: enough for the header, payment and teams at once. */
+  participant: ParticipantListRow;
+  /** The full record, once fetched; null while it is on its way. */
+  details: ParticipantRow | null;
+  detailsError: string | null;
   /** False until the payments service answers; see PaymentStrip. */
   paymentsReady: boolean;
   onClose: () => void;
@@ -633,15 +719,21 @@ function ParticipantDetailModal({
         <PaymentStrip participant={p} ready={paymentsReady} />
 
         <Section title="Profile">
-          <DetailGrid>
-            <Detail label="Phone" value={p.phone} />
-            <Detail label="Gender" value={p.gender} />
-            <Detail label="Country" value={p.country} />
-            <Detail label="Student branch" value={p.sb ?? '—'} />
-            <Detail label="IEEE ID" value={p.ieeeId?.toString() ?? '—'} />
-            <Detail label="Career stage" value={CAREER_STAGE_LABELS[p.careerStage ?? ''] ?? '—'} />
-            {p.room && <Detail label="Room" value={p.room.status} />}
-          </DetailGrid>
+          {d ? (
+            <DetailGrid>
+              <Detail label="Phone" value={d.phone} />
+              <Detail label="Gender" value={d.gender} />
+              <Detail label="Country" value={d.country} />
+              <Detail label="Student branch" value={d.sb ?? '—'} />
+              <Detail label="IEEE ID" value={d.ieeeId?.toString() ?? '—'} />
+              <Detail label="Career stage" value={CAREER_STAGE_LABELS[d.careerStage ?? ''] ?? '—'} />
+              {d.room && <Detail label="Room" value={d.room.status} />}
+            </DetailGrid>
+          ) : detailsError ? (
+            <p className="pay-error">{detailsError}</p>
+          ) : (
+            <DetailsSkeleton />
+          )}
         </Section>
 
         <Section title="Teams">
@@ -664,27 +756,41 @@ function ParticipantDetailModal({
           )}
         </Section>
 
-        {p.internationalInfo && (
+        {d?.internationalInfo && (
           <Section title="International">
             <DetailGrid>
-              <Detail label="Date of birth" value={formatDate(p.internationalInfo.dateOfBirth)} />
-              <Detail label="Affiliation" value={p.internationalInfo.affiliation} />
+              <Detail label="Date of birth" value={formatDate(d.internationalInfo.dateOfBirth)} />
+              <Detail label="Affiliation" value={d.internationalInfo.affiliation} />
               <Detail
                 label="Lives in"
-                value={`${p.internationalInfo.cityOfResidence}, ${p.internationalInfo.countryOfResidence}`}
+                value={`${d.internationalInfo.cityOfResidence}, ${d.internationalInfo.countryOfResidence}`}
               />
               <Detail
                 label="Stay"
-                value={`${formatDate(p.internationalInfo.expectedArrivalDate)} – ${formatDate(p.internationalInfo.expectedDepartureDate)}`}
+                value={`${formatDate(d.internationalInfo.expectedArrivalDate)} – ${formatDate(d.internationalInfo.expectedDepartureDate)}`}
               />
-              <Detail label="Visa letter" value={p.internationalInfo.requiresVisaLetter ? 'Needed' : 'Not needed'} />
-              <Detail label="Visa status" value={p.internationalInfo.visaApplication?.status ?? '—'} />
+              <Detail label="Visa letter" value={d.internationalInfo.requiresVisaLetter ? 'Needed' : 'Not needed'} />
+              <Detail label="Visa status" value={d.internationalInfo.visaApplication?.status ?? '—'} />
             </DetailGrid>
           </Section>
         )}
 
-        {children}
+        {d ? children : !detailsError && <Section title="IEEE membership"><DetailsSkeleton /></Section>}
       </div>
+    </div>
+  );
+}
+
+/** Stands in for a details grid while the full record is on its way. */
+function DetailsSkeleton() {
+  return (
+    <div className="pmodal-grid">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i}>
+          <Skeleton className="skeleton-text" style={{ width: '40%' }} />
+          <Skeleton className="skeleton-text" style={{ width: '70%', marginTop: 6, height: 14 }} />
+        </div>
+      ))}
     </div>
   );
 }
@@ -707,7 +813,7 @@ const CAREER_STAGE_LABELS: Record<string, string> = {
  * Where their payment stands, in one line: the table's icon and state, what
  * they owe, and a link to their newest proof.
  */
-function PaymentStrip({ participant: p, ready }: { participant: ParticipantRow; ready: boolean }) {
+function PaymentStrip({ participant: p, ready }: { participant: ParticipantListRow; ready: boolean }) {
   if (!ready && !p.paid) {
     return <Skeleton style={{ height: 50, marginTop: 20, borderRadius: 12 }} />;
   }

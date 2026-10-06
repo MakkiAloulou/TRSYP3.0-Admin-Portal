@@ -26,7 +26,11 @@ type Checked = { verification: IeeeVerification; priced: { participantType: stri
  * refresh one result on demand. The new result is merged into local state so
  * the row and modal update at once, then the page is refreshed from the server.
  */
-export function useIeeeVerification(participants: ParticipantRow[]) {
+/** What a re-check needs to merge its result into: the table's lean rows
+ *  and the popup's full record both qualify. */
+type Checkable = { id: string; participantType: string; isRas: boolean };
+
+export function useIeeeVerification<T extends Checkable>(participants: T[]) {
   const router = useRouter();
   const [checks, setChecks] = useState<Record<string, Checked>>({});
   const [activity, setActivity] = useState<Record<string, Activity>>({});
@@ -41,7 +45,7 @@ export function useIeeeVerification(participants: ParticipantRow[]) {
     () =>
       participants.map((p) => {
         const checked = checks[p.id];
-        return checked ? { ...p, ...checked.priced, ieeeVerification: checked.verification } : p;
+        return checked ? ({ ...p, ...checked.priced, ieeeVerification: checked.verification } as T) : p;
       }),
     [participants, checks],
   );

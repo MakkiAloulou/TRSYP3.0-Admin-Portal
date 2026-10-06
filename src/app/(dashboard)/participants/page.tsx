@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
-import { prisma } from '@/lib/prisma';
-import { withCheckerNames } from '@/lib/ieee-checkers';
 import { PROOFS_TAKE, getAllProofs } from '@/lib/payment-proofs';
 import { latestProofPerParticipant } from '@/lib/payment';
+import { loadParticipantList } from './participant-queries';
 import { ParticipantsTable, type PaymentsInfo } from './participants-table';
 
 export const metadata: Metadata = { title: 'Participants' };
@@ -20,88 +19,16 @@ export default async function ParticipantsPage() {
   // promise, so a slow payments service delays the payment icons, not the page.
   const payments = loadPaymentsInfo();
 
-  const participants = await prisma.participant.findMany({
-      orderBy: { createdAt: 'desc' },
-      select: {
-        id: true,
-        ieeeId: true,
-        phone: true,
-        gender: true,
-        paid: true,
-        isInternational: true,
-        banned: true,
-        participantType: true,
-        isRas: true,
-        careerStage: true,
-        sb: true,
-        country: true,
-        // One membership per activity (DB-enforced), so this is at most 3 rows.
-        memberships: {
-          select: {
-            activity: true,
-            team: { select: { name: true, code: true, leaderId: true } },
-          },
-        },
-        room: { select: { id: true, status: true } },
-        internationalInfo: {
-          select: {
-            dateOfBirth: true,
-            countryOfResidence: true,
-            cityOfResidence: true,
-            affiliation: true,
-            expectedArrivalDate: true,
-            expectedDepartureDate: true,
-            requiresVisaLetter: true,
-            visaApplication: { select: { status: true } },
-          },
-        },
-        // Latest IEEE membership check. The claimed* snapshot is what lets the
-        // table tell a still-valid result from one the participant has since
-        // invalidated by editing their profile.
-        ieeeVerification: {
-          select: {
-            status: true,
-            memberStatus: true,
-            grade: true,
-            societies: true,
-            firstInitial: true,
-            lastInitial: true,
-            matchedBy: true,
-            issues: true,
-            checkedAt: true,
-            checkedBy: true,
-            claimedIeeeId: true,
-            claimedType: true,
-            claimedIsRas: true,
-            claimedEmail: true,
-          },
-        },
-        user: {
-          select: {
-            name: true,
-            lastName: true,
-            email: true,
-            active: true,
-            createdAt: true,
-          },
-        },
-      },
-  });
-
-  // JSON round-trip keeps Server -> Client Component props simple: Dates
-  // become ISO strings, which is all the modal needs for display anyway.
-  // Admin ids in checked_by become names before anything reaches the client.
-  const serialized = JSON.parse(JSON.stringify(await withCheckerNames(participants)));
-
-  // latestProof is filled in on the client once `payments` resolves.
-  const rows = serialized.map((participant: { id: string }) => ({ ...participant, latestProof: null }));
+  // Only what the table needs; the popup and export fetch the rest on demand
+  // (see participant-queries.ts for why the split matters).
+  const rows = await loadParticipantList();
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="admin-heading text-lg text-white">Participants</h2>
         <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          {participants.length} total
+          {rows.length} total
         </p>
       </div>
 

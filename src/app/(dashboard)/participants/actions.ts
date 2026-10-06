@@ -2,6 +2,8 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { prisma } from '@/lib/prisma';
+import { loadParticipantDetails } from './participant-queries';
+import type { ParticipantRow } from './participants-table';
 import { isIeeeConfigured, lookupMember, type MemberLookup } from '@/lib/ieee-api';
 import {
   isPlausibleIeeeId,
@@ -176,15 +178,39 @@ async function checkOne(p: Subject, admin: { id: string; name: string }): Promis
   };
 }
 
+/** Most rows one export may ask for — comfortably above the whole event. */
+const MAX_EXPORT = 2000;
+
+export type DetailsResult = { ok: true; participants: ParticipantRow[] } | { ok: false; message: string };
+
+/**
+ * Full records for the details popup (one id) or the CSV export (the visible
+ * rows). The list page loads only what the table shows; this is the rest, on
+ * demand. Admin-only, like every action here.
+ */
+export async function getParticipantDetails(participantIds: string[]): Promise<DetailsResult> {
+  const admin = await currentAdmin();
+  if (!admin) return { ok: false, message: 'Only admins can read participant details.' };
+
+  const ids = [...new Set(participantIds)].slice(0, MAX_EXPORT);
+  if (ids.length === 0) return { ok: true, participants: [] };
+
+  try {
+    return { ok: true, participants: await loadParticipantDetails(ids) };
+  } catch {
+    return { ok: false, message: 'Could not load the details. Try again.' };
+  }
+}
+
 async function currentAdmin() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  // Verified locally with asymmetric keys, like the dashboard layout's check.
+  const { data } = await supabase.auth.getClaims();
+  const userId = data?.claims.sub;
+  if (!userId) return null;
 
   const admin = await prisma.admin.findUnique({
-    where: { supabaseId: user.id },
+    where: { supabaseId: userId },
     select: { id: true, name: true, lastName: true },
   });
   return admin ? { id: admin.id, name: `${admin.name} ${admin.lastName}` } : null;
