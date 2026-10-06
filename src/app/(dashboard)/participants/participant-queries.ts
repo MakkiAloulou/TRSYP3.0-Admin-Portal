@@ -88,7 +88,8 @@ const FULL_SELECT = {
       claimedEmail: true,
     },
   },
-  user: { select: { name: true, lastName: true, email: true, active: true, createdAt: true } },
+  // The main site's avatar settings, drawn in the details popup.
+  user: { select: { name: true, lastName: true, email: true, active: true, createdAt: true, avatar: true } },
 } as const;
 
 /** Every participant, newest first, in the table's shape. */

@@ -21,6 +21,7 @@ import {
 import type { IeeeVerification } from '@/lib/ieee-verification';
 import { IeeeSection, useIeeeVerification } from './ieee-verify';
 import { getParticipantDetails } from './actions';
+import { ParticipantAvatar } from './hybrid-avatar';
 
 type InternationalInfo = {
   dateOfBirth: string;
@@ -69,6 +70,8 @@ export type ParticipantRow = {
     email: string;
     active: boolean;
     createdAt: string;
+    /** The main site's avatar settings (users.avatar), when loaded and set. */
+    avatar?: unknown;
   };
 };
 
@@ -698,7 +701,9 @@ function ParticipantDetailModal({
         </button>
 
         <header className="pmodal-head">
-          <div className="min-w-0">
+          {/* Initials at once; their avatar once the full record lands. */}
+          <ParticipantAvatar avatar={d?.user.avatar} name={p.user.name} lastName={p.user.lastName} />
+          <div className="pmodal-who">
             <h3 className="admin-heading text-lg text-white">
               {p.user.name} {p.user.lastName}
             </h3>

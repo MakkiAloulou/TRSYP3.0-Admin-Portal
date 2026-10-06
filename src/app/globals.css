@@ -2268,6 +2268,154 @@ tr[data-reviewed='REJECTED'] {
   margin-top: 4px; /* centres the chips on the name's first line */
 }
 
+.pmodal-head .p-avatar {
+  margin-top: -4px; /* centres the face on the name and email together */
+}
+
+.pmodal-who {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The participant's face: the main site's hybrid avatar, or their initials. */
+.p-avatar {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 0 0 3px rgba(0, 232, 122, 0.08);
+}
+
+/* The avatar's artboard leaves room around the face; fill the circle with it,
+   framed as the main site frames it. */
+.p-avatar-art {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scale(1.48) translateY(8%);
+  transform-origin: center;
+}
+
+/* An avatar can be opened larger: it says so on hover and focus. */
+.p-avatar--button {
+  cursor: zoom-in;
+  transition:
+    box-shadow 150ms ease,
+    transform 120ms var(--ease-out);
+}
+
+.p-avatar--button:active {
+  transform: scale(0.95);
+}
+
+.p-avatar--button:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 3px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .p-avatar--button:hover {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+      0 0 0 3px rgba(0, 232, 122, 0.35);
+  }
+}
+
+/* The avatar, large, over a dimmed and softened page. */
+.p-avatar-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  cursor: zoom-out;
+  background: rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: pAvatarZoomFade 180ms var(--ease-out);
+}
+
+.p-avatar-zoom-figure {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  margin: 0;
+  animation: pAvatarZoomIn 260ms var(--ease-out);
+}
+
+.p-avatar--zoomed {
+  width: min(320px, 72vw);
+  height: min(320px, 72vw);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.12),
+    0 0 0 6px rgba(0, 232, 122, 0.1),
+    0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+.p-avatar-zoom-figure figcaption {
+  font-size: 15px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.p-avatar-zoom-close {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  font-size: 30px;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.5);
+  transition: color 150ms ease;
+}
+
+.p-avatar-zoom-close:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 4px;
+  border-radius: 6px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .p-avatar-zoom-close:hover {
+    color: #ffffff;
+  }
+}
+
+@keyframes pAvatarZoomFade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pAvatarZoomIn {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .p-avatar-zoom-figure {
+    animation-name: pAvatarZoomFade;
+  }
+}
+
+.p-avatar--initials {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #07120e;
+  background: linear-gradient(135deg, #51e5af, #8dffd2);
+  box-shadow: 0 0 0 3px rgba(0, 232, 122, 0.12);
+}
+
 .pmodal-email {
   margin-top: 2px;
   font-size: 13px;
