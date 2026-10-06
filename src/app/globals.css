@@ -1012,20 +1012,69 @@ button {
   color: rgba(255, 255, 255, 0.5);
 }
 
-.pay-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-right: 7px;
-  flex-shrink: 0;
-}
+/* ─── Payment column (participants) ───────────────────
+   Every state's colour arrives as --pay-mark, so one rule serves all four.
+   Tick, cross and clock are one round mark; a rejected proof is a button. */
 
-.pay-state {
+.pay-mark {
   display: inline-flex;
   align-items: center;
-  white-space: nowrap;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  vertical-align: middle;
+  color: var(--pay-mark);
+  background: color-mix(in srgb, var(--pay-mark) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pay-mark) 30%, transparent);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 120ms ease;
+}
+
+.pay-mark--solid {
+  color: var(--color-bg);
+  background: var(--pay-mark);
+  border-color: var(--pay-mark);
+}
+
+.pay-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px 0 7px;
+  border-radius: 999px;
   font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--pay-mark);
+  background: color-mix(in srgb, var(--pay-mark) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pay-mark) 45%, transparent);
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    transform 120ms ease;
+}
+
+.pay-mark--link:active,
+.pay-action:active {
+  transform: scale(0.94);
+}
+
+.pay-mark--link:focus-visible,
+.pay-action:focus-visible {
+  outline: 2px solid var(--pay-mark);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pay-mark--link:hover,
+  .pay-action:hover {
+    background: color-mix(in srgb, var(--pay-mark) 22%, transparent);
+    border-color: var(--pay-mark);
+  }
 }
 
 /* ─── Loading skeletons ───────────────────────────────
@@ -1325,6 +1374,83 @@ tr[data-reviewed='REJECTED'] {
   min-width: 84px;
 }
 
+/* Fixed layout so the colgroup's shares hold whatever the content. */
+.part-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+/* Below tablet width each row becomes a card: name and email stacked with
+   the membership chips under them, and the payment mark held on the right.
+   The header goes — every card labels itself. */
+@media (max-width: 767px) {
+  .part-table,
+  .part-table tbody {
+    display: block;
+  }
+
+  .part-table colgroup,
+  .part-table thead {
+    display: none;
+  }
+
+  .part-table tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'name pay'
+      'email pay'
+      'member pay';
+    column-gap: 16px;
+    padding: 14px 16px;
+  }
+
+  .part-table td {
+    display: block;
+    padding: 0;
+    text-align: left;
+  }
+
+  .part-table td.viz-empty {
+    grid-column: 1 / -1;
+    padding: 24px 0;
+    text-align: center;
+  }
+
+  .part-table .part-cell-name {
+    grid-area: name;
+  }
+
+  .part-table .part-cell-email {
+    grid-area: email;
+    margin-top: 2px;
+    font-size: 13px;
+  }
+
+  .part-table .part-cell-member {
+    grid-area: member;
+    margin-top: 10px;
+  }
+
+  .part-table .part-cell-pay {
+    grid-area: pay;
+    align-self: center;
+  }
+}
+
+/* The Membership column's chips. One fixed width for every row: a lone chip
+   (Non-IEEE, IEEE) fills it, and IEEE + RAS split it, so the column lines up. */
+.part-member {
+  display: inline-flex;
+  gap: 6px;
+  width: 108px;
+}
+
+.part-member > .admin-badge {
+  flex: 1;
+  justify-content: center;
+}
+
 .part-toolbar-foot {
   display: flex;
   align-items: center;
@@ -1363,26 +1489,6 @@ tr[data-reviewed='REJECTED'] {
   }
 }
 /* ─── IEEE membership verification ────────────────── */
-
-.ieee-pulse {
-  animation: ieeePulse 1s ease-in-out infinite;
-}
-
-@keyframes ieeePulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .ieee-pulse {
-    animation: none;
-  }
-}
 
 .ieee-issue {
   display: flex;

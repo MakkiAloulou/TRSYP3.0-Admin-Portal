@@ -13,8 +13,8 @@ import {
   type PaymentProofStatus,
   type PaymentState,
 } from '@/lib/payment';
-import { deriveIeeeState, evaluateIeee, isRasMember, type IeeeVerification } from '@/lib/ieee-verification';
-import { IeeeSection, IeeeStatusCell, useIeeeVerification } from './ieee-verify';
+import { deriveIeeeState, type IeeeVerification } from '@/lib/ieee-verification';
+import { IeeeSection, useIeeeVerification } from './ieee-verify';
 
 type InternationalInfo = {
   dateOfBirth: string;
@@ -71,27 +71,33 @@ type ActivityFilter = 'ALL' | 'COMPETITION' | 'CHALLENGE' | 'FABLAB' | 'NONE';
 type Filters = {
   query: string;
   payment: PaymentState | 'ALL';
-  type: string;
+  membership: MembershipFilter;
   /** A student branch code, 'ALL', or 'NONE' for participants without one. */
   sb: string;
   activity: ActivityFilter;
-  ieee: IeeeFilter;
 };
 
-/** Any single row state, plus two groupings: RAS members (RAS), and verified
- *  members whose result carries a note (NOTES).
- *  FAILED exists only during a session, since failures are never stored, and
- *  is offered only while there are some. */
-type IeeeFilter = 'ALL' | 'RAS' | 'NOTES' | 'FAILED' | ReturnType<typeof deriveIeeeState>;
+/** The same three things the Membership column shows. IEEE includes RAS
+ *  members, since every RAS member is also an IEEE member. */
+type MembershipFilter = 'ALL' | 'NON_IEEE' | 'IEEE' | 'RAS';
 
 const NO_FILTERS: Filters = {
   query: '',
   payment: 'ALL',
-  type: 'ALL',
+  membership: 'ALL',
   sb: 'ALL',
   activity: 'ALL',
-  ieee: 'ALL',
 };
+
+/** Read from the priced `participantType` / `isRas`, which an IEEE check
+ *  writes through — so once a check has run, this is IEEE's answer. */
+function isIeee(p: ParticipantRow) {
+  return p.participantType !== 'NonIEEE';
+}
+
+function isRas(p: ParticipantRow) {
+  return isIeee(p) && p.isRas;
+}
 
 /** Everything the search box looks through, lowercased once per participant. */
 function searchableText(p: ParticipantRow) {
@@ -110,7 +116,7 @@ function searchableText(p: ParticipantRow) {
     .toLowerCase();
 }
 
-function matches(p: ParticipantRow, filters: Filters, haystack: string, failures: Record<string, string>) {
+function matches(p: ParticipantRow, filters: Filters, haystack: string) {
   const query = filters.query.trim().toLowerCase();
   if (query && !haystack.includes(query)) return false;
 
@@ -118,7 +124,9 @@ function matches(p: ParticipantRow, filters: Filters, haystack: string, failures
     if (derivePaymentState(p.paid, p.latestProof?.status ?? null) !== filters.payment) return false;
   }
 
-  if (filters.type !== 'ALL' && p.participantType !== filters.type) return false;
+  if (filters.membership === 'NON_IEEE' && isIeee(p)) return false;
+  if (filters.membership === 'IEEE' && !isIeee(p)) return false;
+  if (filters.membership === 'RAS' && !isRas(p)) return false;
 
   // Non-students and most internationals have no branch at all, so "No branch"
   // is a meaningful thing to filter for rather than an empty case.
@@ -134,23 +142,7 @@ function matches(p: ParticipantRow, filters: Filters, haystack: string, failures
     if (!p.memberships.some((m) => m.activity === filters.activity)) return false;
   }
 
-  if (filters.ieee !== 'ALL' && !matchesIeee(p, filters.ieee, failures)) return false;
-
   return true;
-}
-
-function matchesIeee(p: ParticipantRow, filter: IeeeFilter, failures: Record<string, string>) {
-  const state = deriveIeeeState(p);
-  switch (filter) {
-    case 'RAS':
-      return state === 'VERIFIED' && p.ieeeVerification !== null && isRasMember(p.ieeeVerification);
-    case 'NOTES':
-      return state === 'VERIFIED' && evaluateIeee(p).issues.length > 0;
-    case 'FAILED':
-      return state === 'UNVERIFIED' && failures[p.id] !== undefined;
-    default:
-      return state === filter;
-  }
 }
 
 export function ParticipantsTable({ participants }: { participants: ParticipantRow[] }) {
@@ -172,13 +164,9 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
   );
 
   const visible = useMemo(
-    () => rows.filter((p) => matches(p, filters, haystacks.get(p.id) ?? '', ieee.failures)),
-    [rows, filters, haystacks, ieee.failures],
+    () => rows.filter((p) => matches(p, filters, haystacks.get(p.id) ?? '')),
+    [rows, filters, haystacks],
   );
-
-  // Taken from the data rather than the enum, so a new participant type appears
-  // in the dropdown without a code change here.
-  const types = useMemo(() => [...new Set(participants.map((p) => p.participantType))].sort(), [participants]);
 
   // Only branches that actually appear. The SB enum has ~55 entries and listing
   // them all would bury the handful in play behind mostly dead options.
@@ -231,10 +219,15 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
             ]}
           />
           <Select
-            label="Type"
-            value={filters.type}
-            onChange={(v) => set('type', v)}
-            options={[{ value: 'ALL', label: 'Any type' }, ...types.map((t) => ({ value: t, label: t }))]}
+            label="Membership"
+            value={filters.membership}
+            onChange={(v) => set('membership', v as MembershipFilter)}
+            options={[
+              { value: 'ALL', label: 'Any membership' },
+              { value: 'NON_IEEE', label: 'Non-IEEE' },
+              { value: 'IEEE', label: 'IEEE' },
+              { value: 'RAS', label: 'RAS' },
+            ]}
           />
           <Select
             label="Student branch"
@@ -258,25 +251,6 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
               { value: 'NONE', label: 'No team' },
             ]}
           />
-          <Select
-            label="IEEE check"
-            value={filters.ieee}
-            onChange={(v) => set('ieee', v as IeeeFilter)}
-            options={[
-              { value: 'ALL', label: 'Any IEEE check' },
-              { value: 'VERIFIED', label: 'Verified' },
-              { value: 'RAS', label: 'Verified · RAS' },
-              { value: 'NOTES', label: 'Verified with a note' },
-              { value: 'NOT_RAS', label: 'Not RAS' },
-              { value: 'NOT_IEEE', label: 'Not IEEE' },
-              { value: 'UNVERIFIED', label: 'No verification yet' },
-              // Also kept while selected, so the dropdown never shows an
-              // option that isn't the one applied.
-              ...(ieee.failedIds.length > 0 || filters.ieee === 'FAILED'
-                ? [{ value: 'FAILED', label: 'Check failed' }]
-                : []),
-            ]}
-          />
         </div>
 
         <div className="part-toolbar-foot">
@@ -292,20 +266,28 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
       </div>
 
       <div className="admin-card overflow-x-auto">
-        <table className="min-w-full text-sm">
+        {/* Fixed layout: every column gets a planned share of the width rather
+            than whatever its content happens to need, so rows line up the same
+            whichever participants are on screen. */}
+        <table className="part-table text-sm">
+          <colgroup>
+            <col style={{ width: '28%' }} />
+            <col style={{ width: '36%' }} />
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '16%' }} />
+          </colgroup>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(0,232,122,0.12)' }}>
               <Th>Name</Th>
               <Th>Email</Th>
-              <Th>Type</Th>
-              <Th>Payment</Th>
-              <Th>IEEE</Th>
+              <Th align="center">Membership</Th>
+              <Th align="center">Payment</Th>
             </tr>
           </thead>
           <tbody>
             {visible.length === 0 && (
               <tr>
-                <td colSpan={5} className="viz-empty">
+                <td colSpan={4} className="viz-empty">
                   No participant matches these filters.
                 </td>
               </tr>
@@ -317,24 +299,22 @@ export function ParticipantsTable({ participants }: { participants: ParticipantR
                 className="admin-row"
                 style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}
               >
-                <Td className="font-medium text-white">
+                <Td
+                  className="part-cell-name truncate font-medium text-white"
+                  title={`${participant.user.name} ${participant.user.lastName}`}
+                >
                   {participant.user.name} {participant.user.lastName}
                 </Td>
-                <Td style={{ color: 'rgba(255,255,255,0.5)' }}>{participant.user.email}</Td>
-                <Td>
-                  <TypeBadge participantType={participant.participantType} />
+                <Td className="part-cell-email truncate" style={{ color: 'rgba(255,255,255,0.5)' }} title={participant.user.email}>
+                  {participant.user.email}
+                </Td>
+                <Td className="part-cell-member text-center">
+                  <MembershipBadge participant={participant} />
                 </Td>
                 {/* Clicking the status opens the row modal, so the link stops
                     propagation and goes straight to the proof instead. */}
-                <Td onClick={(e) => e.stopPropagation()}>
+                <Td className="part-cell-pay text-center" onClick={(e) => e.stopPropagation()}>
                   <PaymentStatus participant={participant} />
-                </Td>
-                <Td>
-                  <IeeeStatusCell
-                    participant={participant}
-                    activity={ieee.activity[participant.id]}
-                    failure={ieee.failures[participant.id]}
-                  />
                 </Td>
               </tr>
             ))}
@@ -401,32 +381,106 @@ const BADGE_VARIANTS: Record<PaymentState, string> = {
 
 /**
  * Four states from two sources: `paid` on the participant, plus the status of
- * their most recent proof. Anything still reviewable links through to it.
+ * their most recent proof. Tick, cross and clock are one round mark each; the
+ * clock and the rejected button link through to the proof.
  */
 function PaymentStatus({ participant }: { participant: ParticipantRow }) {
   const proof = participant.latestProof;
   const state = derivePaymentState(participant.paid, proof?.status ?? null);
-  const dot = <span className="pay-dot" style={{ background: PAYMENT_STATE_COLORS[state] }} />;
+  const style = { '--pay-mark': PAYMENT_STATE_COLORS[state] } as React.CSSProperties;
+  const href = proof ? `/payments?status=${proof.status}&proof=${proof.id}` : null;
 
-  // Paid needs no link — approving is final, so there is nothing to act on.
-  if (proof && (state === 'PENDING' || state === 'REJECTED')) {
+  if (href && state === 'PENDING') {
     return (
       <Link
-        href={`/payments?status=${proof.status}&proof=${proof.id}`}
-        className="pay-state hover:underline"
-        style={{ color: PAYMENT_STATE_COLORS[state] }}
-        title={state === 'PENDING' ? 'Review this proof' : 'See why this was rejected'}
+        href={href}
+        className="pay-mark pay-mark--link"
+        style={style}
+        title="Pending — open the proof to review it"
+        aria-label="Pending: open the proof to review it"
       >
-        {dot}
-        {PAYMENT_STATE_LABELS[state]}
+        <PaymentIcon state={state} size={16} />
+      </Link>
+    );
+  }
+
+  // Paid needs no link — approving is final, so there is nothing to act on.
+  if (href && state === 'REJECTED') {
+    return (
+      <Link href={href} className="pay-action" style={style} title="Proof rejected — see the reason sent">
+        <PaymentIcon state={state} size={16} />
+        Rejected
       </Link>
     );
   }
 
   return (
-    <span className="pay-state" style={{ color: PAYMENT_STATE_COLORS[state] }}>
-      {dot}
-      {PAYMENT_STATE_LABELS[state]}
+    <span
+      className={`pay-mark${state === 'PAID' ? ' pay-mark--solid' : ''}`}
+      style={style}
+      title={PAYMENT_STATE_LABELS[state]}
+      role="img"
+      aria-label={PAYMENT_STATE_LABELS[state]}
+    >
+      <PaymentIcon state={state} size={state === 'PAID' ? 16 : 14} />
+    </span>
+  );
+}
+
+/** Tick, cross, clock face and alert — four distinct shapes, so the state
+ *  never rests on colour alone. */
+function PaymentIcon({ state, size }: { state: PaymentState; size: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={state === 'PAID' ? 3 : 2.25}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+    >
+      {state === 'PAID' && <path d="M5.5 12.5l4.2 4.2L18.5 8" />}
+      {state === 'NOT_PAID' && <path d="M7 7l10 10M17 7L7 17" />}
+      {state === 'PENDING' && (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7v5l3.5 2" />
+        </>
+      )}
+      {state === 'REJECTED' && (
+        <>
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7.5v5.5M12 16.5v.01" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+/**
+ * What the participant is priced as: Non-IEEE alone, or IEEE with a separate
+ * RAS chip beside it for RAS members. The IEEE check behind it lives in the
+ * participant's details.
+ */
+function MembershipBadge({ participant: p }: { participant: ParticipantRow }) {
+  const source = deriveIeeeState(p) === 'UNVERIFIED' ? 'not verified with IEEE yet' : 'confirmed by IEEE';
+
+  if (!isIeee(p)) {
+    return (
+      <span className="part-member" title={`Non-IEEE — ${source}`}>
+        <span className="admin-badge admin-badge--pink">Non-IEEE</span>
+      </span>
+    );
+  }
+
+  return (
+    <span className="part-member" title={`${isRas(p) ? 'IEEE member in RAS' : 'IEEE member'} — ${source}`}>
+      <span className="admin-badge admin-badge--green">IEEE</span>
+      {isRas(p) && <span className="admin-badge admin-badge--violet">RAS</span>}
     </span>
   );
 }
@@ -568,9 +622,12 @@ function formatDate(iso: string) {
   });
 }
 
-function Th({ children }: { children: React.ReactNode }) {
+function Th({ children, align = 'left' }: { children: React.ReactNode; align?: 'left' | 'center' }) {
   return (
-    <th className="px-4 py-3 text-left text-xs uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.4)' }}>
+    <th
+      className={`px-4 py-3 text-xs uppercase tracking-wide ${align === 'center' ? 'text-center' : 'text-left'}`}
+      style={{ color: 'rgba(255,255,255,0.4)' }}
+    >
       {children}
     </th>
   );
@@ -580,15 +637,18 @@ function Td({
   children,
   className = '',
   style,
+  title,
   onClick,
 }: {
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
+  /** Full text on hover, for cells that truncate. */
+  title?: string;
   onClick?: React.MouseEventHandler<HTMLTableCellElement>;
 }) {
   return (
-    <td className={`px-4 py-3 ${className}`} style={style} onClick={onClick}>
+    <td className={`px-4 py-3 ${className}`} style={style} title={title} onClick={onClick}>
       {children}
     </td>
   );

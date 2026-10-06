@@ -5,23 +5,15 @@ import { useRouter } from 'next/navigation';
 import { verifyParticipants, type VerifyResult } from './actions';
 import {
   IEEE_CHECK_BADGES,
-  IEEE_CHECK_COLORS,
   IEEE_CHECK_LABELS,
-  deriveIeeeState,
   evaluateIeee,
   hasIeeeResult,
   isIeeeResultStale,
-  isRasMember,
   isRasSociety,
   recordSummary,
   type IeeeVerification,
 } from '@/lib/ieee-verification';
 import type { ParticipantRow } from './participants-table';
-
-// A failed lookup is blue, apart from every verdict colour; the transient
-// "Checking…" is plain white — its pulse is what sets it apart.
-const FAILED_COLOR = 'var(--viz-3)';
-const CHECKING_COLOR = 'rgba(255,255,255,0.8)';
 
 type Activity = 'checking';
 
@@ -94,55 +86,7 @@ export function useIeeeVerification(participants: ParticipantRow[]) {
     router.refresh();
   }
 
-  /** Participants whose last re-check failed and who have no current result. */
-  const failedIds = useMemo(
-    () =>
-      rows
-        .filter((p) => failures[p.id] !== undefined && deriveIeeeState(p) === 'UNVERIFIED')
-        .map((p) => p.id),
-    [rows, failures],
-  );
-
-  return { rows, activity, failures, busy, failedIds, recheck };
-}
-
-/* ─── Table cell ───────────────────────────────────────────────────── */
-
-/**
- * The state alone. IEEE's full answer and any notes are in the participant's
- * details, so the column stays a one-glance scan.
- */
-export function IeeeStatusCell({
-  participant: p,
-  activity,
-  failure,
-}: {
-  participant: ParticipantRow;
-  activity: Activity | undefined;
-  failure: string | undefined;
-}) {
-  if (activity === 'checking') {
-    return <StateLine color={CHECKING_COLOR} label="Checking…" pulse />;
-  }
-
-  const state = deriveIeeeState(p);
-
-  // Only when there is no current result to show instead.
-  if (failure && state === 'UNVERIFIED') {
-    return <StateLine color={FAILED_COLOR} label="Check failed" />;
-  }
-
-  const ras = state === 'VERIFIED' && p.ieeeVerification !== null && isRasMember(p.ieeeVerification);
-  return <StateLine color={IEEE_CHECK_COLORS[state]} label={`${IEEE_CHECK_LABELS[state]}${ras ? ' · RAS' : ''}`} />;
-}
-
-function StateLine({ color, label, pulse = false }: { color: string; label: string; pulse?: boolean }) {
-  return (
-    <span className="pay-state" style={{ color }}>
-      <span className={`pay-dot${pulse ? ' ieee-pulse' : ''}`} style={{ background: color }} />
-      {label}
-    </span>
-  );
+  return { rows, activity, failures, busy, recheck };
 }
 
 /* ─── Detail modal section ─────────────────────────────────────────── */
