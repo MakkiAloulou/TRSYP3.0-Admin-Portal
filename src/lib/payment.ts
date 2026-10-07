@@ -69,19 +69,31 @@ export function byOldestFirst(a: PaymentProofRow, b: PaymentProofRow) {
 /**
  * Registration fees in TND, by role and membership tier. A copy of the
  * backend's registration/domain/fees.ts (itself mirrored in the main site's
- * lib/fees.ts) — change all three together.
+ * lib/fees.ts) — change all three together. FABLAB_FEE below is the one
+ * deliberate difference.
  */
 const FEES = {
   VISITOR: { IEEE_RAS: 170, IEEE: 175, NON_IEEE: 185 },
   CHALLENGER: { IEEE_RAS: 175, IEEE: 180, NON_IEEE: 190 },
 } as const;
 
+/** Flat fee in TND for anyone on a Fablab hackathon team, whatever their tier
+ *  or other teams. Admin-side only: the backend and main site still price
+ *  these participants from FEES. */
+const FABLAB_FEE = 100;
+
 /**
- * What a participant owes right now, priced exactly as the backend's feeFor():
- * a challenger is anyone on a team in any activity, and RAS only discounts
- * IEEE members.
+ * What a participant owes right now. Hackathon participants pay FABLAB_FEE;
+ * everyone else is priced as the backend's feeFor(): a challenger is anyone
+ * on a team in any activity, and RAS only discounts IEEE members.
  */
-export function feeFor(participant: { participantType: string; isRas: boolean; memberships: unknown[] }) {
+export function feeFor(participant: {
+  participantType: string;
+  isRas: boolean;
+  memberships: { activity: string }[];
+}) {
+  if (participant.memberships.some((m) => m.activity === 'FABLAB')) return FABLAB_FEE;
+
   const role = participant.memberships.length > 0 ? 'CHALLENGER' : 'VISITOR';
   const tier = participant.participantType === 'NonIEEE' ? 'NON_IEEE' : participant.isRas ? 'IEEE_RAS' : 'IEEE';
   return FEES[role][tier];
