@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useEscapeKey } from '@/lib/use-escape-key';
 import { ModalPresence } from '../modal-presence';
 import { PaymentIcon } from '../payment-icon';
@@ -21,6 +21,7 @@ import {
 import type { IeeeVerification } from '@/lib/ieee-verification';
 import { IeeeSection, useIeeeVerification } from './ieee-verify';
 import { getParticipantDetails } from './actions';
+import { recordCashPayment, type CashResult } from '../payments/actions';
 import { ParticipantAvatar } from './hybrid-avatar';
 
 type InternationalInfo = {
@@ -256,16 +257,38 @@ export function ParticipantsTable({
   const [filters, setFilters] = useState<Filters>(() => filtersFromParams(searchParams));
   const ieee = useIeeeVerification(participants);
 
+  // Cash payments recorded this visit, participant id -> the new proof's id.
+  // Laid over the rows so the row and popup turn Paid before the refresh lands.
+  const [cashPaid, setCashPaid] = useState<Record<string, string>>({});
+  const router = useRouter();
+
   // Rows with this session's IEEE results merged in; everything below reads
   // these, so a row updates the moment its batch returns.
   // Each row's newest proof joined in once the payments service has answered.
-  const rows = useMemo(
-    () =>
-      paymentsInfo?.ok
-        ? ieee.rows.map((p) => ({ ...p, latestProof: paymentsInfo.latest[p.id] ?? null }))
-        : ieee.rows,
-    [ieee.rows, paymentsInfo],
-  );
+  const rows = useMemo(() => {
+    const joined = paymentsInfo?.ok
+      ? ieee.rows.map((p) => ({ ...p, latestProof: paymentsInfo.latest[p.id] ?? null }))
+      : ieee.rows;
+    return joined.map((p) =>
+      cashPaid[p.id] ? { ...p, paid: true, latestProof: { id: cashPaid[p.id], status: 'APPROVED' as const } } : p,
+    );
+  }, [ieee.rows, paymentsInfo, cashPaid]);
+
+  /** Records a cash payment; resolves to an error to show, or null on success. */
+  async function recordCash(id: string): Promise<string | null> {
+    let result: CashResult;
+    try {
+      result = await recordCashPayment(id);
+    } catch {
+      return 'Could not reach the server.';
+    }
+    if (!result.ok) return result.message;
+
+    const proofId = result.proof.id;
+    setCashPaid((current) => ({ ...current, [id]: proofId }));
+    router.refresh();
+    return null;
+  }
 
   // Held by id so the open modal follows the row as its IEEE result arrives.
   const selected = selectedId ? (rows.find((p) => p.id === selectedId) ?? null) : null;
@@ -545,6 +568,7 @@ export function ParticipantsTable({
             details={selectedFull}
             detailsError={detailsError?.id === selected.id ? detailsError.message : null}
             paymentsReady={paymentsReady}
+            onRecordCash={() => recordCash(selected.id)}
             onClose={() => setSelectedId(null)}
           >
             {selectedFull && (
@@ -676,6 +700,7 @@ function ParticipantDetailModal({
   details: d,
   detailsError,
   paymentsReady,
+  onRecordCash,
   onClose,
   children,
 }: {
@@ -686,6 +711,8 @@ function ParticipantDetailModal({
   detailsError: string | null;
   /** False until the payments service answers; see PaymentStrip. */
   paymentsReady: boolean;
+  /** Records a cash payment; resolves to an error to show, or null. */
+  onRecordCash: () => Promise<string | null>;
   onClose: () => void;
   /** Extra sections rendered after the participant's own details. */
   children?: React.ReactNode;
@@ -722,6 +749,11 @@ function ParticipantDetailModal({
         )}
 
         <PaymentStrip participant={p} ready={paymentsReady} />
+        {/* Not for a pending proof — that one is reviewed, not bypassed — and
+            not for a banned participant, whom the backend refuses anyway. */}
+        {paymentsReady && !p.paid && !p.banned && p.latestProof?.status !== 'PENDING' && (
+          <CashPayment participant={p} onRecord={onRecordCash} />
+        )}
 
         <Section title="Profile">
           {d ? (
@@ -842,6 +874,75 @@ function PaymentStrip({ participant: p, ready }: { participant: ParticipantListR
       ) : (
         <span className="pmodal-muted pmodal-pay-link">No proof sent</span>
       )}
+    </div>
+  );
+}
+
+/**
+ * Marks someone paid who handed over cash in person, so has no receipt. The
+ * backend files it as an approved CASH proof, so it still shows on the
+ * Payments page. Two-step, like approving a proof: it can't be undone here.
+ */
+function CashPayment({
+  participant: p,
+  onRecord,
+}: {
+  participant: ParticipantListRow;
+  onRecord: () => Promise<string | null>;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function record() {
+    setBusy(true);
+    setError(null);
+    // On success the participant turns Paid and this unmounts.
+    const failure = await onRecord();
+    if (failure) {
+      setError(failure);
+      setConfirming(false);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="pmodal-cash">
+      {confirming ? (
+        <>
+          <span className="pmodal-cash-text">
+            Record <strong className="text-white">{formatAmount(feeFor(p))}</strong> paid in cash by{' '}
+            {p.user.name}? This can&apos;t be undone here.
+          </span>
+          <span className="pmodal-cash-actions">
+            <button
+              type="button"
+              className="admin-btn-secondary px-3 py-1.5 text-xs"
+              onClick={() => setConfirming(false)}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="admin-btn-primary px-3 py-1.5 text-xs"
+              onClick={record}
+              disabled={busy}
+              autoFocus
+            >
+              {busy ? 'Recording…' : 'Yes, mark paid'}
+            </button>
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="pmodal-cash-text">Paid in person, with no receipt?</span>
+          <button type="button" className="pay-btn-approve pmodal-cash-actions" onClick={() => setConfirming(true)}>
+            Mark paid (cash)
+          </button>
+        </>
+      )}
+      {error && <p className="pay-error pmodal-cash-error">{error}</p>}
     </div>
   );
 }

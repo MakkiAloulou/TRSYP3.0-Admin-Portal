@@ -2570,6 +2570,33 @@ tr[data-reviewed='REJECTED'] {
   }
 }
 
+/* Cash payment row, under the payment strip. Wraps on phones so the confirm
+   text gets its own line above the buttons. */
+.pmodal-cash {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+  padding: 0 4px;
+}
+
+.pmodal-cash-text {
+  flex: 1 1 220px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.pmodal-cash-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.pmodal-cash-error {
+  flex-basis: 100%;
+}
+
 .pmodal-section {
   margin-top: 20px;
   padding-top: 18px;

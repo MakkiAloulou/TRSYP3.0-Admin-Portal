@@ -47,7 +47,28 @@ export async function rejectProof(id: string, reason: string): Promise<ReviewRes
   return finish(result, '/payments');
 }
 
-export type ReceiptUrlResult = { ok: true; url: string } | { ok: false; message: string };
+export type CashResult = { ok: true; proof: PaymentProofRow } | { ok: false; message: string };
+
+/**
+ * Records cash handed over in person: the backend writes an approved CASH
+ * proof with no receipt and settles the participant through markAsPaid(), so
+ * the payment shows on the Payments page like any other. Refused (with a
+ * message worth showing) when they are banned, already paid, or have a proof
+ * waiting in the queue.
+ */
+export async function recordCashPayment(participantId: string): Promise<CashResult> {
+  const result = await apiFetch<PaymentProofRow>(`/payment/admin/participants/${participantId}/cash`, {
+    method: 'POST',
+  });
+
+  if (!result.ok) return { ok: false, message: result.message };
+
+  revalidatePath('/payments');
+  revalidatePath('/participants');
+  return { ok: true, proof: result.data };
+}
+
+export type ReceiptUrlResult ={ ok: true; url: string } | { ok: false; message: string };
 
 /**
  * Asks the backend for a signed URL to one receipt. Fetched when the reviewer
