@@ -925,7 +925,7 @@ function CashPayment({
             </button>
             <button
               type="button"
-              className="admin-btn-primary px-3 py-1.5 text-xs"
+              className="pay-btn-approve"
               onClick={record}
               disabled={busy}
               autoFocus
