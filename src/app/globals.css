@@ -303,7 +303,7 @@ button {
 }
 
 /* ─── Navbar ───────────────────────────────────────────
-   Four sections. Wider screens: logo left, links right, and a thin lit line
+   Five sections. Wider screens: logo left, links right, and a thin lit line
    under the active one that slides along the bar's bottom edge. Phones: the
    top bar keeps only the logo, and the sections move to a bottom tab bar
    within thumb reach. */
@@ -2327,6 +2327,85 @@ tr[data-reviewed='REJECTED'] {
   border: 1px dashed rgba(255, 255, 255, 0.12);
   font-size: 13px;
   color: rgba(255, 255, 255, 0.4);
+}
+
+/* ─── Rooms ─────────────────────────────────────────── */
+
+/* Three figures sit in one row from tablet width up, rather than two and a
+   stray. Phones keep the list card the row turns into below 641px. */
+@media (min-width: 641px) {
+  .viz-kpi-row--three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+.room-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: #fff;
+}
+
+/* Only the phone cards need these: on wider screens the header names the
+   columns. */
+.room-cell-label {
+  display: none;
+}
+
+/* Below tablet width each room becomes a card, the way participants do: code
+   and occupancy along the top, then owner and roommate, then gender and when
+   it was made. */
+@media (max-width: 767px) {
+  .room-table tr {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'code occupancy'
+      'owner owner'
+      'mate mate'
+      'gender created';
+    row-gap: 12px;
+  }
+
+  .room-table .room-cell-code {
+    grid-area: code;
+    align-self: center;
+  }
+
+  .room-table .room-cell-occupancy {
+    grid-area: occupancy;
+    justify-self: end;
+  }
+
+  .room-table .room-cell-owner {
+    grid-area: owner;
+    min-width: 0;
+  }
+
+  .room-table .room-cell-mate {
+    grid-area: mate;
+    min-width: 0;
+  }
+
+  .room-table .room-cell-gender {
+    grid-area: gender;
+    font-size: 12.5px;
+  }
+
+  .room-table .room-cell-created {
+    grid-area: created;
+    font-size: 12.5px;
+    text-align: right;
+  }
+
+  .room-cell-label {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.35);
+  }
 }
 
 /* ─── Participant details popup ───────────────────────

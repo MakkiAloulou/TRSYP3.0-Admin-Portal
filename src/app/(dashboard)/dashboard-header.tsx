@@ -13,7 +13,7 @@ type Section = {
 };
 
 /**
- * Four sections. The three team activities live under Teams, with their own
+ * Five sections. The three team activities live under Teams, with their own
  * tabs on those pages (teams/teams-tabs.tsx), which keeps the bar short
  * enough to be a phone's bottom tab bar as it is.
  */
@@ -22,11 +22,12 @@ const SECTIONS: Section[] = [
   { href: '/participants', label: 'Participants', icon: 'participants', isActive: (p) => p.startsWith('/participants') },
   { href: '/payments', label: 'Payments', icon: 'payments', isActive: (p) => p.startsWith('/payments') },
   { href: '/teams/competition', label: 'Teams', icon: 'teams', isActive: (p) => p.startsWith('/teams') },
+  { href: '/rooms', label: 'Rooms', icon: 'rooms', isActive: (p) => p.startsWith('/rooms') },
 ];
 
 /**
  * The top bar (logo, and the sections centred on wider screens) plus, on
- * phones, a floating dock with the same four sections in thumb reach: icons,
+ * phones, a floating dock with the same five sections in thumb reach: icons,
  * with the current one opened out into a lit capsule carrying its label.
  */
 export function DashboardHeader() {
@@ -175,6 +176,14 @@ const ICONS = {
       <path d="M16 6h2.5a2.5 2.5 0 0 1-2.8 4" />
       <path d="M12 13v4" />
       <path d="M8.5 20h7" />
+    </>
+  ),
+  rooms: (
+    <>
+      <path d="M3 5v14" />
+      <path d="M3 15h18" />
+      <path d="M21 19v-6.5a3 3 0 0 0-3-3h-7.5V15" />
+      <circle cx="6.75" cy="11.25" r="1.75" />
     </>
   ),
 };

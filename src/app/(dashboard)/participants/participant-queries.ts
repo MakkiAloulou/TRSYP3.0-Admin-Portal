@@ -54,7 +54,7 @@ const FULL_SELECT = {
   sb: true,
   country: true,
   memberships: membershipSelect,
-  room: { select: { id: true, status: true } },
+  room: { select: { code: true } },
   internationalInfo: {
     select: {
       dateOfBirth: true,

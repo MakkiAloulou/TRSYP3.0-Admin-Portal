@@ -149,7 +149,7 @@ export async function getParticipantsByActivity(activity: TeamActivity) {
           },
         },
       },
-      room: { select: { id: true, status: true } },
+      room: { select: { code: true } },
       internationalInfo: {
         select: {
           dateOfBirth: true,

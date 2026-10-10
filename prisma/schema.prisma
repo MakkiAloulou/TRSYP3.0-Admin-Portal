@@ -96,9 +96,10 @@ model Participant {
   createdAt         DateTime           @default(now()) @map("created_at")
   updatedAt         DateTime           @updatedAt @map("updated_at")
   ownedRoom         Room?              @relation("RoomOwner")
+  // Set on both people in a room, owner included. The column really is
+  // camelCase ("roomId"), unlike the rest of the table.
   room              Room?              @relation("RoomResidents", fields: [roomId], references: [id])
   roomId            String?
-  invitations       Invitation[]
   // Relations
   // A participant may belong to at most one team per activity — the cap is a
   // DB-level unique on TeamMembership(participant_id, activity).
@@ -368,46 +369,23 @@ enum POSITION {
 // Define payment-related models here
 
 // --- Rooming Module ---
-// Define rooming-related models here
-enum InvitationStatus {
-  Pending
-  Accepted
-  Rejected
-}
-
-enum RoomStatus {
-  Pending // Default — waiting for residents and payments
-  Confirmed // All residents have paid
-}
-
+/// A double room, formed on the main site the way teams are: the owner creates
+/// it and their roommate joins with its code. Owned by the backend's
+/// migrations, which dropped the old size/status columns and the invitations
+/// table; read-only here.
 model Room {
-  id          String        @id @default(uuid())
-  size        Int // max capacity
-  status      RoomStatus    @default(Pending)
-  ownerId     String        @unique @map("owner_id")
-  createdAt   DateTime      @default(now()) @map("created_at")
-  updatedAt   DateTime      @updatedAt @map("updated_at")
+  id        String        @id @default(uuid())
+  code      String        @unique // 6 characters; rooms have no name
+  gender    String // 'male' | 'female', copied from the owner on creation
+  ownerId   String        @unique @map("owner_id")
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
   // Relations
-  owner       Participant   @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  residents   Participant[] @relation("RoomResidents")
-  invitations Invitation[]
+  owner     Participant   @relation("RoomOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  // Everyone in the room, owner included — at most 2, enforced by the backend.
+  residents Participant[] @relation("RoomResidents")
 
   @@map("rooms")
-}
-
-model Invitation {
-  id        String           @id @default(uuid())
-  roomId    String           @map("room_id")
-  guestId   String           @map("guest_id")
-  status    InvitationStatus @default(Pending)
-  createdAt DateTime         @default(now()) @map("created_at")
-  updatedAt DateTime         @updatedAt @map("updated_at")
-  // Relations
-  room      Room             @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  guest     Participant      @relation(fields: [guestId], references: [id], onDelete: Cascade)
-
-  @@unique([roomId, guestId]) // prevent duplicate invitations
-  @@map("invitations")
 }
 
 // --- Visa Module ---

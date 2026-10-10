@@ -4,8 +4,8 @@ import { IEEE_CSV_COLUMNS } from './ieee-csv';
 
 /**
  * Flattens a participant into one spreadsheet row. Everything an admin might
- * need to sort, filter or mail-merge on — no ids beyond the room grouping key,
- * which is what lets residents of the same room be grouped in the sheet.
+ * need to sort, filter or mail-merge on — no ids. The room code is what lets
+ * roommates be grouped in the sheet.
  */
 const COLUMNS: { header: string; value: (p: ParticipantRow) => string }[] = [
   { header: 'First name', value: (p) => p.user.name },
@@ -32,8 +32,7 @@ const COLUMNS: { header: string; value: (p: ParticipantRow) => string }[] = [
   { header: 'Hackathon team', value: (p) => team(p, 'FABLAB')?.name ?? '' },
   { header: 'Hackathon team code', value: (p) => team(p, 'FABLAB')?.code ?? '' },
   { header: 'Hackathon role', value: (p) => role(p, 'FABLAB') },
-  { header: 'Room group', value: (p) => (p.room ? p.room.id.slice(0, 8) : '') },
-  { header: 'Room status', value: (p) => p.room?.status ?? '' },
+  { header: 'Room code', value: (p) => p.room?.code ?? '' },
   { header: 'Registered at', value: (p) => dateTime(p.user.createdAt) },
   { header: 'Date of birth', value: (p) => date(p.internationalInfo?.dateOfBirth) },
   { header: 'City of residence', value: (p) => p.internationalInfo?.cityOfResidence ?? '' },

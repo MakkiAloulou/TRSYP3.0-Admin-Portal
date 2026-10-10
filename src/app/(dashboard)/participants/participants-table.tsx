@@ -55,7 +55,7 @@ export type ParticipantRow = {
   sb: string | null;
   country: string;
   memberships: Membership[];
-  room: { id: string; status: string } | null;
+  room: { code: string } | null;
   internationalInfo: InternationalInfo | null;
   /** This participant's most recent proof, if they have ever submitted one. The
    *  participant record carries only `paid`, so this is what separates awaiting
@@ -764,7 +764,7 @@ function ParticipantDetailModal({
               <Detail label="Student branch" value={d.sb ?? '—'} />
               <Detail label="IEEE ID" value={d.ieeeId?.toString() ?? '—'} />
               <Detail label="Career stage" value={CAREER_STAGE_LABELS[d.careerStage ?? ''] ?? '—'} />
-              {d.room && <Detail label="Room" value={d.room.status} />}
+              {d.room && <Detail label="Room" value={d.room.code} />}
             </DetailGrid>
           ) : detailsError ? (
             <p className="pay-error">{detailsError}</p>
