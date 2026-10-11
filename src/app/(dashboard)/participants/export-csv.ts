@@ -103,7 +103,7 @@ function dateTime(iso: string) {
  * start of a formula — which also stops Excel mangling phone numbers that
  * begin with "+".
  */
-function escapeCell(value: string) {
+export function escapeCell(value: string) {
   const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
   return `"${guarded.replace(/"/g, '""')}"`;
 }

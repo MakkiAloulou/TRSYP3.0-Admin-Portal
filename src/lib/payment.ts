@@ -18,6 +18,26 @@ export const STATUS_LABELS: Record<PaymentProofStatus, string> = {
   REJECTED: 'Rejected',
 };
 
+/** How the money actually arrived, as the treasurer confirms it. Separate from
+ *  `method`, which is only what the participant chose when submitting. */
+export const PAYMENT_TYPES = ['BANK_TRANSFER', 'INTERNAL_FUND', 'CASH'] as const;
+export type PaymentType = (typeof PAYMENT_TYPES)[number];
+
+export const PAYMENT_TYPE_LABELS: Record<PaymentType, string> = {
+  BANK_TRANSFER: 'Bank transfer',
+  INTERNAL_FUND: 'Internal fund',
+  CASH: 'Cash',
+};
+
+/** The Payments page's tabs: a proof status, everyone, or the approved
+ *  payments whose type the treasurer has yet to confirm. */
+export type ProofFilter = PaymentProofStatus | 'ALL' | 'TO_CONFIRM';
+
+/** An approved payment the treasurer has not typed yet. */
+export function needsPaymentType(proof: Pick<PaymentProofRow, 'status' | 'paymentType'>) {
+  return proof.status === 'APPROVED' && proof.paymentType === null;
+}
+
 /** One row of the review queue. Mirrors what the backend's
  *  GET /payment/admin/proofs returns, so the two stay comparable. */
 export type PaymentProofRow = {
@@ -38,6 +58,8 @@ export type PaymentProofRow = {
    *  type, joining a team), which is why it is never a stored column. */
   currentFee: number;
   participantPaid: boolean;
+  /** Set by the treasurer on approved payments; null means "To confirm". */
+  paymentType: PaymentType | null;
 };
 
 /**

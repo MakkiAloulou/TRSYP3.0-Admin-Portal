@@ -5,45 +5,42 @@ import {
   STATUS_LABELS,
   byOldestFirst,
   latestProofPerParticipant,
+  needsPaymentType,
   type PaymentProofStatus,
+  type ProofFilter,
 } from '@/lib/payment';
 import { PaymentsTable } from './payments-table';
 
-const DEFAULT_TAKE = 20;
-const MAX_TAKE = 100;
-
 /**
  * The queue shows one row per participant, so it cannot let the backend
- * paginate: collapsing a page of 20 proofs could leave any number of rows, and
+ * paginate: collapsing a page of proofs could leave any number of rows, and
  * the counts would not survive it. Everything is fetched (getAllProofs),
- * collapsed, then paged here. At ~300 participants holding a couple of proofs
- * each this is one modest request; revisit if submissions ever outgrow it.
+ * collapsed, and the whole tab shown, with no paging, so it can be scanned,
+ * searched with the browser and exported in one go. At ~300 participants this
+ * is one modest request and one modest table; revisit if it ever outgrows that.
  */
 
 type SearchParams = {
   status?: string;
-  skip?: string;
-  take?: string;
   proof?: string;
 };
 
-function parseStatus(value: string | undefined): PaymentProofStatus | 'ALL' {
-  if (value === 'ALL') return 'ALL';
+function parseStatus(value: string | undefined): ProofFilter {
+  if (value === 'ALL' || value === 'TO_CONFIRM') return value;
   return PAYMENT_PROOF_STATUSES.includes(value as PaymentProofStatus)
     ? (value as PaymentProofStatus)
     : 'PENDING';
 }
 
-function subtitle(status: PaymentProofStatus | 'ALL', total: number, pending: number) {
+function subtitle(status: ProofFilter, total: number, pending: number) {
   if (status === 'PENDING') return `${pending} awaiting review`;
   if (status === 'ALL') return `${total} participants`;
+  if (status === 'TO_CONFIRM') {
+    return total === 0
+      ? 'Every payment is confirmed.'
+      : `${total} to confirm. For each one, pick how the money arrived: Bank transfer, Internal fund or Cash.`;
+  }
   return `${total} ${STATUS_LABELS[status].toLowerCase()}`;
-}
-
-function parseInteger(value: string | undefined, fallback: number, max: number) {
-  const parsed = Number.parseInt(value ?? '', 10);
-  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
-  return Math.min(parsed, max);
 }
 
 /** "(12) Payments" while proofs wait, so the queue shows from another tab. */
@@ -59,8 +56,6 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const params = await searchParams;
 
   const status = parseStatus(params.status);
-  const take = parseInteger(params.take, DEFAULT_TAKE, MAX_TAKE) || DEFAULT_TAKE;
-  const skip = parseInteger(params.skip, 0, Number.MAX_SAFE_INTEGER);
 
   // Fetched without a status filter on purpose. Collapsing has to happen across
   // a participant's whole history: filtering first would surface a superseded
@@ -80,10 +75,14 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   }
 
   const current = latestProofPerParticipant(result.data.data).sort(byOldestFirst);
-  const matching = status === 'ALL' ? current : current.filter((proof) => proof.status === status);
+  const matching =
+    status === 'ALL'
+      ? current
+      : status === 'TO_CONFIRM'
+        ? current.filter(needsPaymentType)
+        : current.filter((proof) => proof.status === status);
 
   const total = matching.length;
-  const proofs = matching.slice(skip, skip + take);
   const pending = current.filter((proof) => proof.status === 'PENDING').length;
 
   // Every tab's count, so the filters say how much is in each queue before
@@ -91,7 +90,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const counts = Object.fromEntries([
     ...PAYMENT_PROOF_STATUSES.map((s) => [s, current.filter((proof) => proof.status === s).length]),
     ['ALL', current.length],
-  ]) as Record<PaymentProofStatus | 'ALL', number>;
+    ['TO_CONFIRM', current.filter(needsPaymentType).length],
+  ]) as Record<ProofFilter, number>;
 
   const truncated = result.data.total > result.data.data.length;
 
@@ -115,10 +115,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       )}
 
       <PaymentsTable
-        proofs={proofs}
-        total={total}
-        skip={skip}
-        take={take}
+        proofs={matching}
         status={status}
         counts={counts}
         focusProofId={params.proof}

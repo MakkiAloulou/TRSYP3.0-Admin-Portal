@@ -1424,6 +1424,25 @@ button {
 
 /* ─── Payment review queue ────────────────────────── */
 
+/* Tabs on the left, Export on the right; on a phone the button takes its own row. */
+.pay-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pay-export {
+  flex: none;
+}
+
+@media (max-width: 639px) {
+  .pay-export {
+    width: 100%;
+  }
+}
+
 .pay-filters {
   display: flex;
   flex-wrap: wrap;
@@ -1552,12 +1571,238 @@ button {
   border: 1px solid rgba(239, 68, 68, 0.2);
 }
 
-/* Below tablet width each proof becomes a card:
+/* ── Paid via: how the money arrived, as the treasurer confirms it ──────
+   Each type keeps one hue everywhere it appears (--type, an RGB triplet).
+   Unconfirmed is an empty slot to fill: a dashed amber tray. Confirmed is a
+   single chip, so a long column reads as tags rather than as controls. */
+.pay-via [data-type='BANK_TRANSFER'] {
+  --type: 90 163 240;
+}
+
+.pay-via [data-type='INTERNAL_FUND'] {
+  --type: 167 139 250;
+}
+
+.pay-via [data-type='CASH'] {
+  --type: 201 162 39;
+}
+
+/* Sized by its cell, so the picker can fit its words to the room it has. */
+.pay-via {
+  container-type: inline-size;
+}
+
+/* The card view labels the row itself; the table has a column header. */
+.pay-via-caption {
+  display: none;
+}
+
+.pay-via-tray {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  width: 100%;
+  max-width: 228px;
+  /* Centered in its column, like the chip that replaces it. */
+  margin-inline: auto;
+  padding: 2px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.03);
+  animation: pay-via-open 180ms var(--ease-out);
+}
+
+.pay-via[data-state='unset'] .pay-via-tray {
+  border-style: dashed;
+  border-color: rgba(245, 158, 11, 0.5);
+  background: rgba(245, 158, 11, 0.04);
+  animation: none;
+}
+
+.pay-via-option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.62);
+  transition:
+    color 120ms ease,
+    background-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms var(--ease-out);
+}
+
+.pay-via-full {
+  display: none;
+}
+
+.pay-via-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pay-via-icon {
+  flex: none;
+  color: rgb(var(--type));
+}
+
+.pay-via-option .pay-via-icon {
+  opacity: 0.85;
+  transition: opacity 120ms ease;
+}
+
+.pay-via-option[aria-pressed='true'] {
+  color: #fff;
+  background: rgb(var(--type) / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(var(--type) / 0.45);
+}
+
+.pay-via-option:active {
+  transform: scale(0.96);
+}
+
+.pay-via-option:focus-visible {
+  outline: 2px solid rgb(var(--type));
+  outline-offset: 0;
+}
+
+/* One width for every chip, so the column lines up like a list of tags. */
+.pay-via-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: min(100%, 138px);
+  max-width: 100%;
+  height: 28px;
+  padding: 0 9px 0 10px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: rgb(var(--type));
+  background: rgb(var(--type) / 0.1);
+  border: 1px solid rgb(var(--type) / 0.3);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    opacity 160ms ease;
+}
+
+/* Only a chip the treasurer just set settles in; chips loaded with the page stay still. */
+.pay-via-chip[data-fresh] {
+  animation: pay-via-settle 240ms var(--ease-out);
+}
+
+.pay-via-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pay-via-edit {
+  flex: none;
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.75);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.pay-via-chip:focus-visible {
+  outline: 2px solid rgb(var(--type));
+  outline-offset: 2px;
+}
+
+.pay-via-chip:focus-visible .pay-via-edit {
+  opacity: 0.8;
+}
+
+/* Saving: already showing the choice, not settled yet. */
+.pay-via-chip[aria-busy='true'] {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .pay-via-option:hover:not([aria-pressed='true']) {
+    color: #fff;
+    background: rgb(var(--type) / 0.1);
+  }
+
+  .pay-via-option:hover .pay-via-icon {
+    opacity: 1;
+  }
+
+  .pay-via-chip:hover:not(:disabled) {
+    background: rgb(var(--type) / 0.16);
+    border-color: rgb(var(--type) / 0.55);
+  }
+
+  .pay-via-chip:hover:not(:disabled) .pay-via-edit {
+    opacity: 0.8;
+  }
+}
+
+/* No hover on touch, so the chip says it can be changed. */
+@media (hover: none) {
+  .pay-via-edit {
+    opacity: 0.5;
+  }
+}
+
+/* The words always show; the room only decides which ones. A card has room
+   for the full names; a tight table column (small laptops) drops the icons
+   before it would ever drop a word. */
+@container (min-width: 280px) {
+  .pay-via-short {
+    display: none;
+  }
+
+  .pay-via-full {
+    display: inline;
+  }
+}
+
+@container (max-width: 189px) {
+  .pay-via-option .pay-via-icon {
+    display: none;
+  }
+}
+
+@keyframes pay-via-settle {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes pay-via-open {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pay-via-chip[data-fresh],
+  .pay-via-tray {
+    animation: none;
+  }
+}
+
+/* Below laptop width each proof becomes a card:
      participant ............ status
      fee + method ...... submitted
      receipt ........ approve/reject
-   The header goes — every card labels itself. */
-@media (max-width: 767px) {
+     paid via (approved only) ... footer
+   The header goes — every card labels itself. Tablets get the cards too:
+   seven columns do not fit below 1024px without wrapping and colliding. */
+@media (max-width: 1023px) {
   .proof-table,
   .proof-table tbody {
     display: block;
@@ -1574,7 +1819,8 @@ button {
     grid-template-areas:
       'who status'
       'fee when'
-      'receipt review';
+      'receipt review'
+      'type type';
     align-items: center;
     gap: 12px 16px;
     padding: 16px;
@@ -1629,6 +1875,141 @@ button {
   .proof-table .proof-cell-review {
     grid-area: review;
     text-align: right;
+  }
+
+  /* Paid via closes the card under a hairline, as its footer. */
+  .proof-table .proof-cell-type {
+    grid-area: type;
+    margin-top: 2px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .proof-table .pay-via[data-state='set'] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .proof-table .pay-via-caption {
+    display: block;
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.45);
+  }
+
+  /* A question over the choices, centered on them. */
+  .proof-table .pay-via[data-state='unset'] .pay-via-caption,
+  .proof-table .pay-via[data-state='editing'] .pay-via-caption {
+    margin-bottom: 10px;
+    text-align: center;
+  }
+
+  .proof-table .pay-via[data-state='unset'] .pay-via-caption {
+    color: #f59e0b;
+  }
+
+  /* Full card width with thumb-sized options on touch. */
+  .proof-table .pay-via-tray {
+    max-width: none;
+    padding: 3px;
+    border-radius: 12px;
+  }
+
+  /* Icon over the full name: a big target, and room for "Internal fund". */
+  .proof-table .pay-via-option {
+    flex-direction: column;
+    height: 56px;
+    gap: 5px;
+    font-size: 13px;
+    border-radius: 9px;
+  }
+
+  .proof-table .pay-via-option .pay-via-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Alone on its card, a chip needs no column width to line up with. */
+  .proof-table .pay-via-chip {
+    min-width: 0;
+    height: 32px;
+    padding: 0 11px 0 12px;
+    font-size: 13px;
+  }
+
+  /* No money held, no footer: drop its row, or the gap above it stays behind. */
+  .proof-table .proof-cell-type--none {
+    display: none;
+  }
+
+  .proof-table tr:has(> .proof-cell-type--none) {
+    grid-template-areas:
+      'who status'
+      'fee when'
+      'receipt review';
+  }
+}
+
+/* Tablets: the same card with room to spread out, so nothing hugs the edges.
+     participant ...................................... status
+     FEE        SUBMITTED      RECEIPT              REVIEW
+     175 TND    Yesterday      [View]     Reviewed 10 Oct
+                   paid via (centered footer)
+   The four facts carry their column names, the table header brought into the card. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .proof-table tr {
+    grid-template-columns:
+      minmax(0, 0.8fr)
+      minmax(0, 1fr)
+      minmax(0, 0.9fr)
+      minmax(0, 1.3fr);
+    grid-template-areas:
+      'who who who status'
+      'fee when receipt review'
+      'type type type type';
+    gap: 18px 24px;
+    padding: 20px 24px;
+  }
+
+  .proof-table tr:has(> .proof-cell-type--none) {
+    grid-template-areas:
+      'who who who status'
+      'fee when receipt review';
+  }
+
+  .proof-table td[data-label] {
+    align-self: start;
+  }
+
+  .proof-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 7px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+  }
+
+  /* In a row of columns, Submitted reads from the left like the others. */
+  .proof-table .proof-cell-when {
+    justify-self: start;
+    text-align: left;
+  }
+
+  .proof-table .proof-subrow {
+    padding: 0 24px 20px;
+  }
+
+  .proof-table .pay-via[data-state='set'] {
+    justify-content: center;
+  }
+
+  .proof-table .pay-via-tray {
+    max-width: 480px;
+    margin: 0 auto;
   }
 }
 

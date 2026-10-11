@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import {
   PAYMENT_PROOF_STATUSES,
   PAYMENT_STATE_COLORS,
+  PAYMENT_TYPES,
+  PAYMENT_TYPE_LABELS,
   REJECTION_REASON_MAX,
   STATUS_LABELS,
   formatAmount,
@@ -14,25 +16,27 @@ import {
   type PaymentProofRow,
   type PaymentProofStatus,
   type PaymentState,
+  type PaymentType,
+  type ProofFilter,
 } from '@/lib/payment';
 import { useEscapeKey } from '@/lib/use-escape-key';
 import { ModalPresence } from '../modal-presence';
 import { PaymentIcon } from '../payment-icon';
-import { approveProof, getReceiptUrl, rejectProof } from './actions';
+import { approveProof, getReceiptUrl, rejectProof, setPaymentType } from './actions';
+import { downloadCsv } from '../participants/export-csv';
+import { buildPaymentsCsv, paymentsCsvFilename } from './export-payments-csv';
 
 type Props = {
+  /** Every payment in the open tab: the page shows them all, no paging. */
   proofs: PaymentProofRow[];
-  total: number;
-  skip: number;
-  take: number;
-  status: PaymentProofStatus | 'ALL';
+  status: ProofFilter;
   /** How many participants sit in each tab. */
-  counts: Record<PaymentProofStatus | 'ALL', number>;
+  counts: Record<ProofFilter, number>;
   /** Deep link from the participants page — highlights that row on arrival. */
   focusProofId?: string;
 };
 
-export function PaymentsTable({ proofs, total, skip, take, status, counts, focusProofId }: Props) {
+export function PaymentsTable({ proofs, status, counts, focusProofId }: Props) {
   const router = useRouter();
 
   // Actions hand back the updated proof, so a review updates one row in place
@@ -53,6 +57,9 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
   const [rejecting, setRejecting] = useState<PaymentProofRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  // The type being saved, shown as chosen while it saves. Kept apart from
+  // busyId, which also drives the receipt button's "Opening…".
+  const [typing, setTyping] = useState<{ id: string; type: PaymentType } | null>(null);
   // The row a review just changed, tinted briefly so the reviewer sees which one moved.
   const [justReviewedId, setJustReviewedId] = useState<string | null>(null);
   // Read once per visit: "3 days ago" stays put while the page is open, and
@@ -170,6 +177,21 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
     }
   }
 
+  async function handleSetType(proof: PaymentProofRow, paymentType: PaymentType) {
+    setTyping({ id: proof.id, type: paymentType });
+    setRowError(null);
+    try {
+      const result = await setPaymentType(proof.id, paymentType);
+      if (result.ok) {
+        applyUpdate(result.proof);
+      } else {
+        setRowError({ id: proof.id, message: result.message });
+      }
+    } finally {
+      setTyping(null);
+    }
+  }
+
   /** Returns an error message to show inside the reject modal, or null on success. */
   async function handleReject(proof: PaymentProofRow, reason: string) {
     setBusyId(proof.id);
@@ -218,26 +240,40 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
         </div>
       )}
 
-      <StatusFilters active={status} take={take} counts={counts} />
+      <div className="pay-toolbar">
+        <StatusFilters active={status} counts={counts} />
+        <button
+          type="button"
+          className="admin-btn-secondary pay-export px-4 py-2 text-sm"
+          // The rows as shown, so a payment type set a moment ago is in the file.
+          onClick={() => downloadCsv(buildPaymentsCsv(rows), paymentsCsvFilename(status))}
+          disabled={rows.length === 0}
+          title="Download this tab as a spreadsheet: name, email, fee, payment type, payment and review dates"
+        >
+          Export CSV
+        </button>
+      </div>
 
       <div className="admin-card mt-4 overflow-x-auto">
         {/* Fixed layout, same as the participants table: each column keeps its
             planned share whatever the rows on this page contain. */}
         <table className="proof-table text-sm">
           <colgroup>
-            <col style={{ width: '30%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '14%' }} />
-            <col style={{ width: '9%' }} />
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '10%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '11%' }} />
+            <col style={{ width: '22%' }} />
+            <col style={{ width: '7%' }} />
             <col style={{ width: '19%' }} />
           </colgroup>
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(0,232,122,0.12)' }}>
               <Th>Participant</Th>
-              <Th>Fee</Th>
+              <Th align="center">Fee</Th>
               <Th>Submitted</Th>
-              <Th>Receipt</Th>
+              <Th align="center">Receipt</Th>
+              <Th align="center">Paid via</Th>
               <Th align="center">Status</Th>
               <Th align="right">Review</Th>
             </tr>
@@ -245,7 +281,7 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
           <tbody>
             {rows.length === 0 && (
               <tr>
-                <td colSpan={6} className="viz-empty">
+                <td colSpan={7} className="viz-empty">
                   Nothing in this queue.
                 </td>
               </tr>
@@ -265,13 +301,13 @@ export function PaymentsTable({ proofs, total, skip, take, status, counts, focus
                 onConfirmApprove={() => handleApprove(proof)}
                 onCancelApprove={() => setConfirming(null)}
                 onReject={() => setRejecting(proof)}
+                pendingType={typing?.id === proof.id ? typing.type : null}
+                onSetType={(paymentType) => handleSetType(proof, paymentType)}
               />
             ))}
           </tbody>
         </table>
       </div>
-
-      <Pagination total={total} skip={skip} take={take} status={status} count={rows.length} />
 
       <ModalPresence>
         {receipt && (
@@ -311,6 +347,8 @@ function ProofRow({
   onConfirmApprove,
   onCancelApprove,
   onReject,
+  pendingType,
+  onSetType,
 }: {
   proof: PaymentProofRow;
   busy: boolean;
@@ -325,6 +363,9 @@ function ProofRow({
   onConfirmApprove: () => void;
   onCancelApprove: () => void;
   onReject: () => void;
+  /** The payment type being saved for this row, if one is. */
+  pendingType: PaymentType | null;
+  onSetType: (paymentType: PaymentType) => void;
 }) {
   const ref = useRef<HTMLTableRowElement>(null);
   const pending = proof.status === 'PENDING';
@@ -361,15 +402,15 @@ function ProofRow({
             {proof.participantEmail}
           </div>
         </Td>
-        <Td className="proof-cell-fee">
+        <Td className="proof-cell-fee" align="center" label="Fee">
           <span className="text-white" style={{ fontVariantNumeric: 'tabular-nums' }}>
             {formatAmount(proof.currentFee)}
           </span>
         </Td>
-        <Td className="proof-cell-when">
+        <Td className="proof-cell-when" label="Submitted">
           <WaitTime proof={proof} now={now} />
         </Td>
-        <Td className="proof-cell-receipt">
+        <Td className="proof-cell-receipt" align="center" label="Receipt">
           {proof.hasFile ? (
             <button
               type="button"
@@ -385,10 +426,21 @@ function ProofRow({
             <span className="pay-no-receipt">No file</span>
           )}
         </Td>
+        <Td
+          className={proof.status === 'APPROVED' ? 'proof-cell-type' : 'proof-cell-type proof-cell-type--none'}
+          align="center"
+        >
+          {/* Only approved payments hold money, so only they get a type. */}
+          {proof.status === 'APPROVED' ? (
+            <PaymentVia proof={proof} pending={pendingType} onSet={onSetType} />
+          ) : (
+            <span style={{ color: 'rgba(255,255,255,0.35)' }}>&mdash;</span>
+          )}
+        </Td>
         <Td className="proof-cell-status" align="center">
           <StatusMark status={proof.status} />
         </Td>
-        <Td className="proof-cell-review" align="right">
+        <Td className="proof-cell-review" align="right" label="Review">
           {pending && confirming ? (
             // Same two-step approval as the receipt viewer: approving can't be
             // undone from the dashboard, so it takes a second, in-place click.
@@ -430,7 +482,7 @@ function ProofRow({
 
       {hasReason && (
         <tr className="proof-subrow" style={{ borderBottom: error ? 'none' : '1px solid rgba(255,255,255,0.05)' }}>
-          <td colSpan={6} className="px-4 pb-3">
+          <td colSpan={7} className="px-4 pb-3">
             <span className="proof-reason">
               <span style={{ color: 'rgba(255,255,255,0.45)' }}>Reason sent:</span> {proof.rejectionReason}
             </span>
@@ -440,12 +492,192 @@ function ProofRow({
 
       {error && (
         <tr className="proof-subrow" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-          <td colSpan={6} className="px-4 pb-3">
+          <td colSpan={7} className="px-4 pb-3">
             <span className="pay-error">{error}</span>
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+/** For a table cell too narrow for the full names; cards and chips spell them out. */
+const PAYMENT_TYPE_SHORT: Record<PaymentType, string> = {
+  BANK_TRANSFER: 'Bank',
+  INTERNAL_FUND: 'Fund',
+  CASH: 'Cash',
+};
+
+/**
+ * How the money arrived, as the treasurer confirms it.
+ *
+ * Unconfirmed, it is an empty slot to fill: Bank / Fund / Cash, one click
+ * each. Confirmed, it settles into a single chip in the type's own colour, so
+ * a long column reads as tags rather than as a wall of controls; clicking the
+ * chip reopens the choice. A choice shows while it saves and falls back if
+ * the save fails.
+ */
+function PaymentVia({
+  proof,
+  pending,
+  onSet,
+}: {
+  proof: PaymentProofRow;
+  pending: PaymentType | null;
+  onSet: (paymentType: PaymentType) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  // Set by a choice made here, so only that chip animates in, not every chip on load.
+  const [fresh, setFresh] = useState(false);
+  const trayRef = useRef<HTMLDivElement>(null);
+  const chipRef = useRef<HTMLButtonElement>(null);
+  const returnFocus = useRef(false);
+
+  const shown = pending ?? proof.paymentType;
+  const state = shown === null ? 'unset' : editing ? 'editing' : 'set';
+
+  // Opening from the chip moves focus onto the current choice.
+  useEffect(() => {
+    if (editing) trayRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+  }, [editing]);
+
+  // Back on the chip once it can take focus again (it is disabled while saving),
+  // unless the reviewer has already moved on.
+  useEffect(() => {
+    if (state !== 'set' || pending !== null || !returnFocus.current) return;
+    returnFocus.current = false;
+    if (document.activeElement === document.body) chipRef.current?.focus();
+  }, [state, pending]);
+
+  // A press anywhere else closes an open picker. Pointer, not blur: Safari
+  // does not focus a clicked button, so a blur check would close the picker
+  // before the click on an option landed.
+  useEffect(() => {
+    if (!editing) return;
+    function onPointerDown(event: PointerEvent) {
+      if (!trayRef.current?.contains(event.target as Node)) setEditing(false);
+    }
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [editing]);
+
+  useEscapeKey(
+    editing
+      ? () => {
+          returnFocus.current = true;
+          setEditing(false);
+        }
+      : null,
+  );
+
+  function choose(type: PaymentType) {
+    returnFocus.current = true;
+    setEditing(false);
+    if (type === proof.paymentType) return;
+    setFresh(true);
+    onSet(type);
+  }
+
+  return (
+    <div className="pay-via" data-state={state}>
+      <span className="pay-via-caption" aria-hidden>
+        {state === 'set' ? 'Paid via' : 'How was this paid?'}
+      </span>
+
+      {state === 'set' && shown ? (
+        <button
+          ref={chipRef}
+          type="button"
+          className="pay-via-chip"
+          data-type={shown}
+          data-fresh={fresh ? '' : undefined}
+          aria-busy={pending ? true : undefined}
+          aria-label={`Paid via ${PAYMENT_TYPE_LABELS[shown]}. Change`}
+          title="Change how this was paid"
+          disabled={pending !== null}
+          onClick={() => setEditing(true)}
+        >
+          <PaymentTypeIcon type={shown} />
+          <span className="pay-via-chip-label">{PAYMENT_TYPE_LABELS[shown]}</span>
+          <svg className="pay-via-edit" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d="M11.2 2.8a1.6 1.6 0 0 1 2.3 2.3L6 12.6l-3 .7.7-3 7.5-7.5Z"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      ) : (
+        <div
+          ref={trayRef}
+          role="group"
+          className="pay-via-tray"
+          aria-label={`How ${proof.participantName} paid${shown ? '' : ', to confirm'}`}
+        >
+          {PAYMENT_TYPES.map((type) => (
+            <button
+              key={type}
+              type="button"
+              className="pay-via-option"
+              data-type={type}
+              aria-pressed={shown === type}
+              aria-label={PAYMENT_TYPE_LABELS[type]}
+              title={PAYMENT_TYPE_LABELS[type]}
+              onClick={() => choose(type)}
+            >
+              <PaymentTypeIcon type={type} />
+              {/* The cell's width picks one (see .pay-via in globals.css). */}
+              <span className="pay-via-short">{PAYMENT_TYPE_SHORT[type]}</span>
+              <span className="pay-via-full">{PAYMENT_TYPE_LABELS[type]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One drawn mark per type, same 1.5 stroke as the receipt icon. */
+function PaymentTypeIcon({ type }: { type: PaymentType }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      className="pay-via-icon"
+    >
+      {type === 'BANK_TRANSFER' && (
+        <>
+          {/* A bank: pediment, three columns, base. */}
+          <path d="M2 6 8 2.5 14 6" />
+          <path d="M4 7.5v4.5M8 7.5v4.5M12 7.5v4.5" />
+          <path d="M2 13.5h12" />
+        </>
+      )}
+      {type === 'INTERNAL_FUND' && (
+        <>
+          {/* A vault: the organisation's own reserve. */}
+          <rect x="2" y="2.5" width="12" height="11" rx="2" />
+          <circle cx="7.5" cy="8" r="2.5" />
+          <path d="M10 8h1.75M4.5 13.5v1M11.5 13.5v1" />
+        </>
+      )}
+      {type === 'CASH' && (
+        <>
+          {/* A banknote. */}
+          <rect x="1.5" y="4" width="13" height="8" rx="1.5" />
+          <circle cx="8" cy="8" r="1.75" />
+          <path d="M4.25 8h.01M11.75 8h.01" />
+        </>
+      )}
+    </svg>
   );
 }
 
@@ -536,18 +768,12 @@ function FileIcon({ pdf }: { pdf: boolean }) {
   );
 }
 
-function StatusFilters({
-  active,
-  take,
-  counts,
-}: {
-  active: PaymentProofStatus | 'ALL';
-  take: number;
-  counts: Record<PaymentProofStatus | 'ALL', number>;
-}) {
-  const options: Array<{ value: PaymentProofStatus | 'ALL'; label: string }> = [
+function StatusFilters({ active, counts }: { active: ProofFilter; counts: Record<ProofFilter, number> }) {
+  const options: Array<{ value: ProofFilter; label: string }> = [
     ...PAYMENT_PROOF_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
     { value: 'ALL', label: 'All' },
+    // The treasurer's queue: approved payments with no type yet.
+    { value: 'TO_CONFIRM', label: 'To confirm' },
   ];
 
   return (
@@ -555,7 +781,7 @@ function StatusFilters({
       {options.map((option) => (
         <Link
           key={option.value}
-          href={`/payments?status=${option.value}&take=${take}`}
+          href={`/payments?status=${option.value}`}
           className="pay-filter"
           data-active={option.value === active ? '' : undefined}
           aria-current={option.value === active ? 'page' : undefined}
@@ -568,53 +794,6 @@ function StatusFilters({
         </Link>
       ))}
     </nav>
-  );
-}
-
-function Pagination({
-  total,
-  skip,
-  take,
-  status,
-  count,
-}: {
-  total: number;
-  skip: number;
-  take: number;
-  status: PaymentProofStatus | 'ALL';
-  count: number;
-}) {
-  const from = total === 0 ? 0 : skip + 1;
-  const to = skip + count;
-  const prev = Math.max(0, skip - take);
-  const next = skip + take;
-
-  return (
-    <div className="pay-pagination mt-4">
-      <span>
-        {from}&ndash;{to} of {total}
-      </span>
-      <span className="flex gap-2">
-        {skip > 0 && (
-          <Link
-            className="admin-btn-secondary px-3 py-1.5 text-xs"
-            href={`/payments?status=${status}&skip=${prev}&take=${take}`}
-            prefetch={false}
-          >
-            Previous
-          </Link>
-        )}
-        {next < total && (
-          <Link
-            className="admin-btn-secondary px-3 py-1.5 text-xs"
-            href={`/payments?status=${status}&skip=${next}&take=${take}`}
-            prefetch={false}
-          >
-            Next
-          </Link>
-        )}
-      </span>
-    </div>
   );
 }
 
@@ -895,14 +1074,17 @@ function Td({
   className,
   style,
   align = 'left',
+  label,
 }: {
   children: React.ReactNode;
   className?: string;
   style?: React.CSSProperties;
   align?: Align;
+  /** The column's name, shown above the value where cards replace the header (tablet). */
+  label?: string;
 }) {
   return (
-    <td className={`px-4 py-3 ${ALIGN_CLASSES[align]} ${className ?? ''}`} style={style}>
+    <td className={`px-4 py-3 ${ALIGN_CLASSES[align]} ${className ?? ''}`} style={style} data-label={label}>
       {children}
     </td>
   );

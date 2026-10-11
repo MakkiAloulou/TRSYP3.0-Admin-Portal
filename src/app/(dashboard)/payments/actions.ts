@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { API_STATUS, apiFetch } from '@/lib/trsyp-api';
-import { validateRejectionReason, type PaymentProofRow } from '@/lib/payment';
+import { PAYMENT_TYPES, validateRejectionReason, type PaymentProofRow, type PaymentType } from '@/lib/payment';
 
 export type ReviewResult =
   | { ok: true; proof: PaymentProofRow }
@@ -65,6 +65,27 @@ export async function recordCashPayment(participantId: string): Promise<CashResu
 
   revalidatePath('/payments');
   revalidatePath('/participants');
+  return { ok: true, proof: result.data };
+}
+
+export type PaymentTypeResult = { ok: true; proof: PaymentProofRow } | { ok: false; message: string };
+
+/**
+ * Records how an approved payment actually arrived - the treasurer's
+ * confirmation. It can be changed again later; the backend refuses anything
+ * but an approved proof.
+ */
+export async function setPaymentType(id: string, paymentType: PaymentType): Promise<PaymentTypeResult> {
+  if (!PAYMENT_TYPES.includes(paymentType)) return { ok: false, message: 'Unknown payment type.' };
+
+  const result = await apiFetch<PaymentProofRow>(`/payment/admin/proofs/${id}/type`, {
+    method: 'PATCH',
+    body: { paymentType },
+  });
+
+  if (!result.ok) return { ok: false, message: result.message };
+
+  revalidatePath('/payments');
   return { ok: true, proof: result.data };
 }
 

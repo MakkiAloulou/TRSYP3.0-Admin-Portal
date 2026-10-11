@@ -39,7 +39,7 @@ export const API_STATUS = {
 export async function apiFetch<T>(
   path: string,
   init?: {
-    method?: 'GET' | 'POST';
+    method?: 'GET' | 'POST' | 'PATCH';
     body?: unknown;
   },
 ): Promise<ApiResult<T>> {
