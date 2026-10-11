@@ -32,6 +32,7 @@ function loadParticipants() {
     select: {
       id: true,
       isRas: true,
+      feeOverride: true,
       participantType: true,
       gender: true,
       paid: true,

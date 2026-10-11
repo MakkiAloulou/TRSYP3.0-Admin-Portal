@@ -83,15 +83,18 @@ const FEES = {
 const FABLAB_FEE = 100;
 
 /**
- * What a participant owes right now. Hackathon participants pay FABLAB_FEE;
- * everyone else is priced as the backend's feeFor(): a challenger is anyone
- * on a team in any activity, and RAS only discounts IEEE members.
+ * What a participant owes right now. An agreed exception pays its
+ * `feeOverride`; hackathon participants pay FABLAB_FEE; everyone else is
+ * priced as the backend's feeFor(): a challenger is anyone on a team in any
+ * activity, and RAS only discounts IEEE members.
  */
 export function feeFor(participant: {
   participantType: string;
   isRas: boolean;
+  feeOverride: number | null;
   memberships: { activity: string }[];
 }) {
+  if (participant.feeOverride !== null) return participant.feeOverride;
   if (participant.memberships.some((m) => m.activity === 'FABLAB')) return FABLAB_FEE;
 
   const role = participant.memberships.length > 0 ? 'CHALLENGER' : 'VISITOR';

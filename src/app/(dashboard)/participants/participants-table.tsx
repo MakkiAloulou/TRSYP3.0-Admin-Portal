@@ -50,6 +50,8 @@ export type ParticipantRow = {
   banned: boolean;
   participantType: string;
   isRas: boolean;
+  /** Agreed exception to the fee table, in TND; null when priced normally. */
+  feeOverride: number | null;
   /** The participant's own answer; separate from IEEE's verdict. */
   careerStage: string | null;
   sb: string | null;
@@ -91,6 +93,7 @@ export type ParticipantListRow = Pick<
   | 'isInternational'
   | 'participantType'
   | 'isRas'
+  | 'feeOverride'
   | 'sb'
   | 'country'
   | 'memberships'
