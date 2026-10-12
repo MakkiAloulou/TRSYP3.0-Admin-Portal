@@ -32,6 +32,8 @@ const LIST_SELECT = {
   sb: true,
   country: true,
   memberships: membershipSelect,
+  // How many are in their room, which is all the Rooming filter needs.
+  room: { select: { _count: { select: { residents: true } } } },
   // Only the claimed* snapshot: enough to tell whether IEEE's answer still
   // applies to the profile as it stands, which is all the table shows.
   ieeeVerification: {
@@ -56,7 +58,8 @@ const FULL_SELECT = {
   sb: true,
   country: true,
   memberships: membershipSelect,
-  room: { select: { code: true } },
+  // Residents include the participant themselves; the popup names the other.
+  room: { select: { code: true, residents: { select: { id: true, user: { select: { name: true, lastName: true } } } } } },
   internationalInfo: {
     select: {
       dateOfBirth: true,
@@ -98,8 +101,10 @@ const FULL_SELECT = {
 export async function loadParticipantList(): Promise<ParticipantListRow[]> {
   const participants = await prisma.participant.findMany({ orderBy: { createdAt: 'desc' }, select: LIST_SELECT });
 
-  return participants.map(({ ieeeVerification: v, ...p }) => ({
+  return participants.map(({ ieeeVerification: v, room, ...p }) => ({
     ...p,
+    // Rooms are doubles and the owner is a resident of their own.
+    rooming: !room ? 'NONE' : room._count.residents >= 2 ? 'FULL' : 'WAITING',
     // The same test deriveIeeeState applies before reading a result: a row
     // checked against details the participant has since changed no longer counts.
     ieeeVerified:

@@ -14,7 +14,7 @@ export default function ParticipantsLoading() {
           <Skeleton className="part-toolbar-btn" style={{ height: 38 }} />
         </div>
         <div className="part-toolbar-filters">
-          {Array.from({ length: 4 }).map((_, select) => (
+          {Array.from({ length: 5 }).map((_, select) => (
             <Skeleton key={select} style={{ height: 34 }} />
           ))}
         </div>

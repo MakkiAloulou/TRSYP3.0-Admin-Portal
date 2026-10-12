@@ -2532,7 +2532,7 @@ tr[data-reviewed='REJECTED'] {
    toolbar edge to edge, in line with the search above. Two per row on a phone. */
 .part-toolbar-filters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 

@@ -57,7 +57,8 @@ export type ParticipantRow = {
   sb: string | null;
   country: string;
   memberships: Membership[];
-  room: { code: string } | null;
+  /** Their double, residents (them included) and all. */
+  room: { code: string; residents: { id: string; user: { name: string; lastName: string } }[] } | null;
   internationalInfo: InternationalInfo | null;
   /** This participant's most recent proof, if they have ever submitted one. The
    *  participant record carries only `paid`, so this is what separates awaiting
@@ -102,6 +103,8 @@ export type ParticipantListRow = Pick<
   user: Pick<ParticipantRow['user'], 'name' | 'lastName' | 'email' | 'active'>;
   /** Whether IEEE's stored answer still applies to the profile as it stands. */
   ieeeVerified: boolean;
+  /** Where they stand on rooming, from their room's resident count. */
+  rooming: RoomingState;
   /** Only set by a re-check made during this visit (useIeeeVerification). */
   ieeeVerification?: IeeeVerification | null;
 };
@@ -119,6 +122,10 @@ export type PaymentsInfo =
 
 type ActivityFilter = 'ALL' | 'COMPETITION' | 'CHALLENGE' | 'FABLAB' | 'NONE';
 
+/** In a double with a roommate, alone in one waiting for a roommate, or in none. */
+export type RoomingState = 'FULL' | 'WAITING' | 'NONE';
+type RoomingFilter = 'ALL' | RoomingState;
+
 type Filters = {
   query: string;
   payment: PaymentState | 'ALL';
@@ -126,6 +133,7 @@ type Filters = {
   /** A student branch code, 'ALL', or 'NONE' for participants without one. */
   sb: string;
   activity: ActivityFilter;
+  rooming: RoomingFilter;
 };
 
 /** The same three things the Membership column shows. IEEE includes RAS
@@ -138,6 +146,7 @@ const NO_FILTERS: Filters = {
   membership: 'ALL',
   sb: 'ALL',
   activity: 'ALL',
+  rooming: 'ALL',
 };
 
 /** URL parameter for each filter, so a filtered view survives a refresh, a
@@ -148,10 +157,12 @@ const FILTER_PARAMS: Record<keyof Filters, string> = {
   membership: 'membership',
   sb: 'sb',
   activity: 'activity',
+  rooming: 'rooming',
 };
 
 const MEMBERSHIP_FILTERS: MembershipFilter[] = ['ALL', 'NON_IEEE', 'IEEE', 'RAS'];
 const ACTIVITY_FILTERS: ActivityFilter[] = ['ALL', 'COMPETITION', 'CHALLENGE', 'FABLAB', 'NONE'];
+const ROOMING_FILTERS: RoomingFilter[] = ['ALL', 'FULL', 'WAITING', 'NONE'];
 
 /** Filters from the URL, ignoring any value that isn't a real option. */
 function filtersFromParams(params: URLSearchParams): Filters {
@@ -166,6 +177,7 @@ function filtersFromParams(params: URLSearchParams): Filters {
     membership: pick('membership', MEMBERSHIP_FILTERS),
     sb: params.get(FILTER_PARAMS.sb) || 'ALL',
     activity: pick('activity', ACTIVITY_FILTERS),
+    rooming: pick('rooming', ROOMING_FILTERS),
   };
 }
 
@@ -231,6 +243,8 @@ function matches(p: ParticipantListRow, filters: Filters, haystack: string) {
   } else if (filters.activity !== 'ALL') {
     if (!p.memberships.some((m) => m.activity === filters.activity)) return false;
   }
+
+  if (filters.rooming !== 'ALL' && p.rooming !== filters.rooming) return false;
 
   return true;
 }
@@ -487,6 +501,17 @@ export function ParticipantsTable({
               { value: 'CHALLENGE', label: 'Challenge' },
               { value: 'FABLAB', label: 'Hackathon' },
               { value: 'NONE', label: 'No team' },
+            ]}
+          />
+          <Select
+            label="Rooming"
+            value={filters.rooming}
+            onChange={(v) => set('rooming', v as RoomingFilter)}
+            options={[
+              { value: 'ALL', label: 'Any rooming' },
+              { value: 'FULL', label: 'Has a roommate' },
+              { value: 'WAITING', label: 'Waiting for roommate' },
+              { value: 'NONE', label: 'No room' },
             ]}
           />
         </div>
@@ -767,7 +792,7 @@ function ParticipantDetailModal({
               <Detail label="Student branch" value={d.sb ?? '—'} />
               <Detail label="IEEE ID" value={d.ieeeId?.toString() ?? '—'} />
               <Detail label="Career stage" value={CAREER_STAGE_LABELS[d.careerStage ?? ''] ?? '—'} />
-              {d.room && <Detail label="Room" value={d.room.code} />}
+              {d.room && <Detail label="Roommate" value={roommateOf(d)} />}
             </DetailGrid>
           ) : detailsError ? (
             <p className="pay-error">{detailsError}</p>
@@ -819,6 +844,12 @@ function ParticipantDetailModal({
       </div>
     </div>
   );
+}
+
+/** The other resident of their double, or a note that the place is still free. */
+function roommateOf(d: ParticipantRow) {
+  const roommate = d.room?.residents.find((r) => r.id !== d.id);
+  return roommate ? `${roommate.user.name} ${roommate.user.lastName}` : 'Waiting for one';
 }
 
 /** Stands in for a details grid while the full record is on its way. */
