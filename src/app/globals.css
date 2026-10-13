@@ -1425,24 +1425,6 @@ button {
 /* ─── Payment review queue ────────────────────────── */
 
 /* Tabs on the left, Export on the right; on a phone the button takes its own row. */
-.pay-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.pay-export {
-  flex: none;
-}
-
-@media (max-width: 639px) {
-  .pay-export {
-    width: 100%;
-  }
-}
-
 .pay-filters {
   display: flex;
   flex-wrap: wrap;
@@ -2717,6 +2699,13 @@ tr[data-reviewed='REJECTED'] {
 @media (min-width: 641px) {
   .viz-kpi-row--three {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* The Payments page's money: Bank, Fund, Cash and To confirm on one line. */
+@media (min-width: 900px) {
+  .viz-kpi-row--four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 

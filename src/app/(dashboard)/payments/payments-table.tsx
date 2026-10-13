@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   PAYMENT_PROOF_STATUSES,
   PAYMENT_STATE_COLORS,
@@ -36,8 +36,54 @@ type Props = {
   focusProofId?: string;
 };
 
+/** Search and payment type, applied in the browser to the open tab's rows. */
+type TableFilters = { query: string; type: PaymentType | 'ALL' };
+
+const NO_TABLE_FILTERS: TableFilters = { query: '', type: 'ALL' };
+
+/** Read from the URL, so a search survives a refresh and a switch of tab. */
+function tableFiltersFrom(params: URLSearchParams): TableFilters {
+  const type = params.get('type');
+  return {
+    query: params.get('q') ?? '',
+    type: PAYMENT_TYPES.includes(type as PaymentType) ? (type as PaymentType) : NO_TABLE_FILTERS.type,
+  };
+}
+
+/** A tab's URL carrying the search and type along with it. */
+function paymentsHref(status: ProofFilter, filters: TableFilters) {
+  const params = new URLSearchParams({ status });
+  if (filters.query) params.set('q', filters.query);
+  if (filters.type !== 'ALL') params.set('type', filters.type);
+  return `/payments?${params}`;
+}
+
+function matchesFilters(proof: PaymentProofRow, { query, type }: TableFilters) {
+  if (type !== 'ALL' && proof.paymentType !== type) return false;
+  const needle = query.trim().toLowerCase();
+  return !needle || `${proof.participantName} ${proof.participantEmail}`.toLowerCase().includes(needle);
+}
+
 export function PaymentsTable({ proofs, status, counts, focusProofId }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [filters, setFilters] = useState<TableFilters>(() => tableFiltersFrom(searchParams));
+
+  // replaceState, as on the participants page: the URL keeps up without
+  // refetching the queue, and a deep-linked proof stays in it.
+  function setFilter<K extends keyof TableFilters>(key: K, value: TableFilters[K]) {
+    applyFilters({ ...filters, [key]: value });
+  }
+
+  function applyFilters(next: TableFilters) {
+    setFilters(next);
+    const params = new URLSearchParams(window.location.search);
+    for (const [name, v] of [['q', next.query], ['type', next.type === 'ALL' ? '' : next.type]] as const) {
+      if (v) params.set(name, v);
+      else params.delete(name);
+    }
+    window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
+  }
 
   // Actions hand back the updated proof, so a review updates one row in place
   // instead of refetching the queue. When the server does send a fresh list
@@ -99,14 +145,19 @@ export function PaymentsTable({ proofs, status, counts, focusProofId }: Props) {
     }
   }
 
+  // What is on screen. Review walks, the export and the counts below all
+  // follow it, so a search narrows everything at once.
+  const visible = useMemo(() => rows.filter((row) => matchesFilters(row, filters)), [rows, filters]);
+  const isFiltered = filters.query.trim() !== '' || filters.type !== 'ALL';
+
   // The proofs the viewer can walk through: pending, with a receipt to read.
-  const reviewable = rows.filter((row) => row.status === 'PENDING' && row.hasFile);
+  const reviewable = visible.filter((row) => row.status === 'PENDING' && row.hasFile);
 
   /** Moves the viewer on from `fromId` — the next reviewable proof after it,
    *  wrapping round — or closes it when none are left. */
   async function advanceFrom(fromId: string) {
-    const index = rows.findIndex((row) => row.id === fromId);
-    const ordered = [...rows.slice(index + 1), ...rows.slice(0, Math.max(index, 0))];
+    const index = visible.findIndex((row) => row.id === fromId);
+    const ordered = [...visible.slice(index + 1), ...visible.slice(0, Math.max(index, 0))];
     const next = ordered.find((row) => row.status === 'PENDING' && row.hasFile && row.id !== fromId);
 
     if (!next) {
@@ -240,18 +291,54 @@ export function PaymentsTable({ proofs, status, counts, focusProofId }: Props) {
         </div>
       )}
 
-      <div className="pay-toolbar">
-        <StatusFilters active={status} counts={counts} />
-        <button
-          type="button"
-          className="admin-btn-secondary pay-export px-4 py-2 text-sm"
-          // The rows as shown, so a payment type set a moment ago is in the file.
-          onClick={() => downloadCsv(buildPaymentsCsv(rows), paymentsCsvFilename(status))}
-          disabled={rows.length === 0}
-          title="Download this tab as a spreadsheet: name, email, fee, payment type, payment and review dates"
-        >
-          Export CSV
-        </button>
+      <StatusFilters active={status} counts={counts} filters={filters} />
+
+      <div className="admin-card part-toolbar mt-4">
+        <div className="part-toolbar-top">
+          <input
+            type="search"
+            className="admin-input part-search"
+            placeholder="Search name or email"
+            value={filters.query}
+            onChange={(e) => setFilter('query', e.target.value)}
+            aria-label="Search payments"
+          />
+          <select
+            className="admin-input part-select part-toolbar-btn"
+            value={filters.type}
+            onChange={(e) => setFilter('type', e.target.value as TableFilters['type'])}
+            aria-label="Payment type"
+            title="Only approved payments have a type"
+          >
+            <option value="ALL">Any type</option>
+            {PAYMENT_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {PAYMENT_TYPE_LABELS[type]}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="admin-btn-secondary part-toolbar-btn py-2 text-sm"
+            // The rows as shown, so a payment type set a moment ago is in the file.
+            onClick={() => downloadCsv(buildPaymentsCsv(visible), paymentsCsvFilename(status))}
+            disabled={visible.length === 0}
+            title="Download what is shown as a spreadsheet: name, email, fee, payment type, payment and review dates"
+          >
+            Export CSV
+          </button>
+        </div>
+
+        {isFiltered && (
+          <div className="part-toolbar-foot">
+            <span>
+              Showing {visible.length} of {rows.length}
+            </span>
+            <button type="button" className="pay-link" onClick={() => applyFilters(NO_TABLE_FILTERS)}>
+              Clear filters
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="admin-card mt-4 overflow-x-auto">
@@ -279,14 +366,14 @@ export function PaymentsTable({ proofs, status, counts, focusProofId }: Props) {
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && (
+            {visible.length === 0 && (
               <tr>
                 <td colSpan={7} className="viz-empty">
-                  Nothing in this queue.
+                  {rows.length === 0 ? 'Nothing in this queue.' : 'No payment matches this search.'}
                 </td>
               </tr>
             )}
-            {rows.map((proof) => (
+            {visible.map((proof) => (
               <ProofRow
                 key={proof.id}
                 proof={proof}
@@ -768,7 +855,15 @@ function FileIcon({ pdf }: { pdf: boolean }) {
   );
 }
 
-function StatusFilters({ active, counts }: { active: ProofFilter; counts: Record<ProofFilter, number> }) {
+function StatusFilters({
+  active,
+  counts,
+  filters,
+}: {
+  active: ProofFilter;
+  counts: Record<ProofFilter, number>;
+  filters: TableFilters;
+}) {
   const options: Array<{ value: ProofFilter; label: string }> = [
     ...PAYMENT_PROOF_STATUSES.map((s) => ({ value: s, label: STATUS_LABELS[s] })),
     { value: 'ALL', label: 'All' },
@@ -781,7 +876,7 @@ function StatusFilters({ active, counts }: { active: ProofFilter; counts: Record
       {options.map((option) => (
         <Link
           key={option.value}
-          href={`/payments?status=${option.value}`}
+          href={paymentsHref(option.value, filters)}
           className="pay-filter"
           data-active={option.value === active ? '' : undefined}
           aria-current={option.value === active ? 'page' : undefined}

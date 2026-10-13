@@ -29,6 +29,13 @@ export const PAYMENT_TYPE_LABELS: Record<PaymentType, string> = {
   CASH: 'Cash',
 };
 
+/** Each type's hue, the same as its chip in the Paid via column (.pay-via). */
+export const PAYMENT_TYPE_COLORS: Record<PaymentType, string> = {
+  BANK_TRANSFER: 'rgb(90 163 240)',
+  INTERNAL_FUND: 'rgb(167 139 250)',
+  CASH: 'rgb(201 162 39)',
+};
+
 /** The Payments page's tabs: a proof status, everyone, or the approved
  *  payments whose type the treasurer has yet to confirm. */
 export type ProofFilter = PaymentProofStatus | 'ALL' | 'TO_CONFIRM';

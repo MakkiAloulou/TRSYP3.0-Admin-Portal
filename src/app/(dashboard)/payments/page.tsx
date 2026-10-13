@@ -2,13 +2,18 @@ import type { Metadata } from 'next';
 import { PROOFS_TAKE, getAllProofs } from '@/lib/payment-proofs';
 import {
   PAYMENT_PROOF_STATUSES,
+  PAYMENT_TYPES,
+  PAYMENT_TYPE_COLORS,
+  PAYMENT_TYPE_LABELS,
   STATUS_LABELS,
   byOldestFirst,
   latestProofPerParticipant,
   needsPaymentType,
+  type PaymentProofRow,
   type PaymentProofStatus,
   type ProofFilter,
 } from '@/lib/payment';
+import { StatTile } from '../charts';
 import { PaymentsTable } from './payments-table';
 
 /**
@@ -114,6 +119,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         </div>
       )}
 
+      <MoneyTiles current={current} />
+
       <PaymentsTable
         proofs={matching}
         status={status}
@@ -122,4 +129,58 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       />
     </div>
   );
+}
+
+/**
+ * The money in, by how it arrived. Every tab shows the same figures: they
+ * total each participant's newest approved proof at the amount they paid
+ * (amountSnapshot, as the dashboard's Fees collected does), whichever tab is
+ * open. Approved payments not typed yet make the fourth tile, so the four
+ * always add up to everything collected.
+ */
+function MoneyTiles({ current }: { current: PaymentProofRow[] }) {
+  const approved = current.filter((proof) => proof.status === 'APPROVED');
+  const sum = (proofs: PaymentProofRow[]) => proofs.reduce((total, proof) => total + proof.amountSnapshot, 0);
+  const untyped = approved.filter((proof) => proof.paymentType === null);
+
+  return (
+    <div className="viz-kpi-row viz-kpi-row--four">
+      {PAYMENT_TYPES.map((type) => {
+        const proofs = approved.filter((proof) => proof.paymentType === type);
+        return (
+          <StatTile
+            key={type}
+            label={PAYMENT_TYPE_LABELS[type]}
+            value={<Tnd amount={sum(proofs)} />}
+            sub={payments(proofs.length)}
+            accent={PAYMENT_TYPE_COLORS[type]}
+          />
+        );
+      })}
+      <StatTile
+        label="To confirm"
+        value={<Tnd amount={sum(untyped)} />}
+        sub={untyped.length === 0 ? `${formatTnd(sum(approved))} TND collected in all` : payments(untyped.length)}
+        href={untyped.length > 0 ? '/payments?status=TO_CONFIRM' : undefined}
+        cta="Confirm"
+      />
+    </div>
+  );
+}
+
+function Tnd({ amount }: { amount: number }) {
+  return (
+    <>
+      {formatTnd(amount)}
+      <span className="viz-tile-unit">TND</span>
+    </>
+  );
+}
+
+function formatTnd(amount: number) {
+  return amount.toLocaleString('en-US');
+}
+
+function payments(count: number) {
+  return `${count} payment${count === 1 ? '' : 's'}`;
 }
