@@ -85,7 +85,8 @@ function HumanAvatar({ avatar, uid }: { avatar: AvatarConfig; uid: string }) {
   );
 }
 
-function HybridAvatar({ avatar, className }: { avatar: AvatarConfig; className?: string }) {
+/** Also rendered to files by scripts/export-avatars.mjs, for the badges. */
+export function HybridAvatar({ avatar, className }: { avatar: AvatarConfig; className?: string }) {
   const palette = PALETTES[avatar.robotColor] ?? PALETTES.Cobalt;
   const instanceId = useId().replace(/:/g, '');
   const shellGradientId = `${instanceId}-hybrid-shell`;

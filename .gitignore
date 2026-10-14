@@ -42,3 +42,6 @@ next-env.d.ts
 
 # Keep example env files tracked
 !*.env.example
+
+# badge avatars from scripts/export-avatars.mjs
+/avatars
