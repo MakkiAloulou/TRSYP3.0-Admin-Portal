@@ -81,6 +81,39 @@ export async function getRooms(filters: RoomFilters, skip: number): Promise<{ ro
   };
 }
 
+/** A room as the export lists it: its gender and the two names. */
+export type RoomPair = { gender: string; owner: string; roommate: string };
+
+/**
+ * Every room matching `filters`, not just a page of them, in the table's
+ * order. The roommate's name is empty while the room waits for one.
+ */
+export async function getRoomPairs(filters: RoomFilters): Promise<RoomPair[]> {
+  const rooms = await prisma.room.findMany({
+    where: whereFor(filters),
+    orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+    select: {
+      gender: true,
+      ownerId: true,
+      owner: { select: occupantSelect },
+      residents: { select: occupantSelect },
+    },
+  });
+
+  return rooms.map((room) => {
+    const roommate = room.residents.find((r) => r.id !== room.ownerId);
+    return {
+      gender: room.gender,
+      owner: fullName(room.owner.user),
+      roommate: roommate ? fullName(roommate.user) : '',
+    };
+  });
+}
+
+function fullName(user: { name: string; lastName: string }) {
+  return `${user.name} ${user.lastName}`.trim();
+}
+
 /**
  * Every room counted by gender, and the full ones likewise; the rest are
  * waiting. Two grouped counts, so the totals never need the rooms themselves.

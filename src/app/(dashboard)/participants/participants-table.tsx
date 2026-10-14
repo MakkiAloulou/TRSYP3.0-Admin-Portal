@@ -7,7 +7,8 @@ import { useEscapeKey } from '@/lib/use-escape-key';
 import { ModalPresence } from '../modal-presence';
 import { PaymentIcon } from '../payment-icon';
 import { Skeleton } from '../loading-skeletons';
-import { buildParticipantsCsv, downloadCsv, participantsCsvFilename } from './export-csv';
+import { downloadXlsx } from '@/lib/xlsx';
+import { buildParticipantsXlsx, participantsXlsxFilename } from './export-participants';
 import {
   PAYMENT_STATES,
   PAYMENT_STATE_COLORS,
@@ -391,7 +392,7 @@ export function ParticipantsTable({
     }
     const byId = new Map(result.participants.map((p) => [p.id, p]));
     const ordered = visible.map((p) => byId.get(p.id)).filter((p): p is ParticipantRow => Boolean(p));
-    downloadCsv(buildParticipantsCsv(ordered), participantsCsvFilename());
+    downloadXlsx(await buildParticipantsXlsx(ordered), participantsXlsxFilename());
     setExportLabel(null);
   }
 
@@ -456,7 +457,7 @@ export function ParticipantsTable({
             disabled={visible.length === 0 || exportLabel === 'Exporting…'}
             aria-live="polite"
           >
-            {exportLabel ?? 'Export CSV'}
+            {exportLabel ?? 'Export Excel'}
           </button>
         </div>
 

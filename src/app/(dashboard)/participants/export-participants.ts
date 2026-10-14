@@ -1,13 +1,14 @@
 import type { ParticipantRow } from './participants-table';
 import { feeFor } from '@/lib/payment';
-import { IEEE_CSV_COLUMNS } from './ieee-csv';
+import { buildXlsx, tabulate, type XlsxColumn } from '@/lib/xlsx';
+import { IEEE_COLUMNS } from './ieee-columns';
 
 /**
  * Flattens a participant into one spreadsheet row. Everything an admin might
  * need to sort, filter or mail-merge on — no ids. The room code is what lets
  * roommates be grouped in the sheet.
  */
-const COLUMNS: { header: string; value: (p: ParticipantRow) => string }[] = [
+const COLUMNS: XlsxColumn<ParticipantRow>[] = [
   { header: 'First name', value: (p) => p.user.name },
   { header: 'Last name', value: (p) => p.user.lastName },
   { header: 'Email', value: (p) => p.user.email },
@@ -15,10 +16,10 @@ const COLUMNS: { header: string; value: (p: ParticipantRow) => string }[] = [
   { header: 'Gender', value: (p) => p.gender },
   { header: 'Participant type', value: (p) => p.participantType },
   { header: 'IEEE ID', value: (p) => p.ieeeId?.toString() ?? '' },
-  ...IEEE_CSV_COLUMNS,
+  ...IEEE_COLUMNS,
   { header: 'Student branch', value: (p) => p.sb ?? '' },
   { header: 'Country', value: (p) => p.country },
-  { header: 'Fee (TND)', value: (p) => feeFor(p).toString() },
+  { header: 'Fee (TND)', value: (p) => feeFor(p) },
   { header: 'Paid', value: (p) => yesNo(p.paid) },
   { header: 'Banned', value: (p) => yesNo(p.banned) },
   { header: 'Account verified', value: (p) => yesNo(p.user.active) },
@@ -47,31 +48,13 @@ const COLUMNS: { header: string; value: (p: ParticipantRow) => string }[] = [
   { header: 'Visa status', value: (p) => p.internationalInfo?.visaApplication?.status ?? '' },
 ];
 
-export function buildParticipantsCsv(participants: ParticipantRow[]): string {
-  const rows = [
-    COLUMNS.map((c) => c.header),
-    ...participants.map((p) => COLUMNS.map((c) => c.value(p))),
-  ];
-
-  // A BOM is what makes Excel read the file as UTF-8 rather than latin-1.
-  return '\uFEFF' + rows.map((row) => row.map(escapeCell).join(',')).join('\r\n');
+export function buildParticipantsXlsx(participants: ParticipantRow[]) {
+  const { header, rows } = tabulate(COLUMNS, participants);
+  return buildXlsx(rows, { sheet: 'Participants', header });
 }
 
-/** Triggers a browser download of `csv` as `filename`. */
-export function downloadCsv(csv: string, filename: string) {
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-  const link = document.createElement('a');
-
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-export function participantsCsvFilename(now = new Date()) {
-  return `trsyp-participants-${now.toISOString().slice(0, 10)}.csv`;
+export function participantsXlsxFilename(now = new Date()) {
+  return `trsyp-participants-${now.toISOString().slice(0, 10)}.xlsx`;
 }
 
 /* ── cell helpers ───────────────────────────────────────── */
@@ -96,14 +79,4 @@ function date(iso?: string) {
 
 function dateTime(iso: string) {
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
-
-/**
- * Quotes a cell, and defuses the leading characters spreadsheets treat as the
- * start of a formula — which also stops Excel mangling phone numbers that
- * begin with "+".
- */
-export function escapeCell(value: string) {
-  const guarded = /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
-  return `"${guarded.replace(/"/g, '""')}"`;
 }

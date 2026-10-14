@@ -1,7 +1,8 @@
 import type { TeamActivity } from '@prisma/client';
 import type { ParticipantRow } from '../participants/participants-table';
 import { FABLAB_AXES } from './team-types';
-import { IEEE_CSV_COLUMNS } from '../participants/ieee-csv';
+import { IEEE_COLUMNS } from '../participants/ieee-columns';
+import { buildXlsx, tabulate, type XlsxColumn } from '@/lib/xlsx';
 
 /** A participant as loaded by `getParticipantsByActivity`, whose teams also carry the FABLAB fields. */
 export type TeamParticipantRow = Omit<ParticipantRow, 'memberships'> & {
@@ -10,7 +11,7 @@ export type TeamParticipantRow = Omit<ParticipantRow, 'memberships'> & {
   })[];
 };
 
-type Column = { header: string; value: (p: TeamParticipantRow) => string };
+type Column = XlsxColumn<TeamParticipantRow>;
 
 const ACTIVITY_LABELS: Record<TeamActivity, string> = {
   COMPETITION: 'Competition',
@@ -19,7 +20,7 @@ const ACTIVITY_LABELS: Record<TeamActivity, string> = {
 };
 
 /**
- * Builds a CSV of every participant in one activity's teams, with their team
+ * The columns for every participant in one activity's teams, with their team
  * in that activity. Hackathon exports also carry the team's axis and concept
  * submission.
  */
@@ -44,7 +45,7 @@ function columnsFor(activity: TeamActivity): Column[] {
     { header: 'Gender', value: (p) => p.gender },
     { header: 'Participant type', value: (p) => p.participantType },
     { header: 'IEEE ID', value: (p) => p.ieeeId?.toString() ?? '' },
-    ...IEEE_CSV_COLUMNS,
+    ...IEEE_COLUMNS,
     { header: 'Student branch', value: (p) => p.sb ?? '' },
     { header: 'Country', value: (p) => p.country },
     { header: `${label} team`, value: (p) => team(p)?.name ?? '' },
@@ -59,29 +60,13 @@ function columnsFor(activity: TeamActivity): Column[] {
   ];
 }
 
-export function buildTeamCsv(activity: TeamActivity, participants: TeamParticipantRow[]): string {
-  const columns = columnsFor(activity);
-  const rows = [columns.map((c) => c.header), ...participants.map((p) => columns.map((c) => c.value(p)))];
-
-  // A BOM is what makes Excel read the file as UTF-8 rather than latin-1.
-  return '﻿' + rows.map((row) => row.map(escapeCell).join(',')).join('\r\n');
+export function buildTeamXlsx(activity: TeamActivity, participants: TeamParticipantRow[]) {
+  const { header, rows } = tabulate(columnsFor(activity), participants);
+  return buildXlsx(rows, { sheet: ACTIVITY_LABELS[activity], header });
 }
 
-/** Triggers a browser download of `csv` as `filename`. */
-export function downloadCsv(csv: string, filename: string) {
-  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-  const link = document.createElement('a');
-
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-export function teamCsvFilename(activity: TeamActivity, now = new Date()) {
-  return `trsyp-${ACTIVITY_LABELS[activity].toLowerCase()}-${now.toISOString().slice(0, 10)}.csv`;
+export function teamXlsxFilename(activity: TeamActivity, now = new Date()) {
+  return `trsyp-${ACTIVITY_LABELS[activity].toLowerCase()}-${now.toISOString().slice(0, 10)}.xlsx`;
 }
 
 /* ── cell helpers ───────────────────────────────────────── */
@@ -103,25 +88,4 @@ function yesNo(value: boolean) {
 function dateTime(iso: string | null | undefined) {
   if (!iso) return '';
   return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
-}
-
-/**
- * Quotes a cell, and defuses the leading characters spreadsheets treat as the
- * start of a formula — which also stops Excel mangling phone numbers that
- * begin with "+".
- */
-function escapeCell(value: string) {
-  if (value === '' || value === 'undefined') {
-    return '';
-  }
-
-  if (value[0] === '=' || value[0] === '+' || value[0] === '-' || value[0] === '@') {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-
-  if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-
-  return value;
 }

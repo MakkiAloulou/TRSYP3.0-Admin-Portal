@@ -1,7 +1,8 @@
 'use client';
 
 import type { TeamActivity } from '@prisma/client';
-import { buildTeamCsv, downloadCsv, teamCsvFilename, type TeamParticipantRow } from './export-team-csv';
+import { downloadXlsx } from '@/lib/xlsx';
+import { buildTeamXlsx, teamXlsxFilename, type TeamParticipantRow } from './export-team';
 
 /** Sits in the teams toolbar, beside the search. */
 export function TeamExportButton({
@@ -11,8 +12,8 @@ export function TeamExportButton({
   activity: TeamActivity;
   participants: TeamParticipantRow[];
 }) {
-  function handleExport() {
-    downloadCsv(buildTeamCsv(activity, participants), teamCsvFilename(activity));
+  async function handleExport() {
+    downloadXlsx(await buildTeamXlsx(activity, participants), teamXlsxFilename(activity));
   }
 
   return (
@@ -22,7 +23,7 @@ export function TeamExportButton({
       onClick={handleExport}
       disabled={participants.length === 0}
     >
-      Export CSV
+      Export Excel
     </button>
   );
 }

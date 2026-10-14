@@ -23,8 +23,8 @@ import { useEscapeKey } from '@/lib/use-escape-key';
 import { ModalPresence } from '../modal-presence';
 import { PaymentIcon } from '../payment-icon';
 import { approveProof, getReceiptUrl, rejectProof, setPaymentType } from './actions';
-import { downloadCsv } from '../participants/export-csv';
-import { buildPaymentsCsv, paymentsCsvFilename } from './export-payments-csv';
+import { downloadXlsx } from '@/lib/xlsx';
+import { buildPaymentsXlsx, paymentsXlsxFilename } from './export-payments';
 
 type Props = {
   /** Every payment in the open tab: the page shows them all, no paging. */
@@ -321,11 +321,11 @@ export function PaymentsTable({ proofs, status, counts, focusProofId }: Props) {
             type="button"
             className="admin-btn-secondary part-toolbar-btn py-2 text-sm"
             // The rows as shown, so a payment type set a moment ago is in the file.
-            onClick={() => downloadCsv(buildPaymentsCsv(visible), paymentsCsvFilename(status))}
+            onClick={async () => downloadXlsx(await buildPaymentsXlsx(visible), paymentsXlsxFilename(status))}
             disabled={visible.length === 0}
             title="Download what is shown as a spreadsheet: name, email, fee, payment type, payment and review dates"
           >
-            Export CSV
+            Export Excel
           </button>
         </div>
 

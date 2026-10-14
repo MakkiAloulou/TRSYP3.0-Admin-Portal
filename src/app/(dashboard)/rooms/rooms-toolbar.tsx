@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { downloadXlsx } from '@/lib/xlsx';
+import { exportRoomsXlsx } from './actions';
 import {
   NO_ROOM_FILTERS,
   ROOM_GENDERS,
@@ -77,6 +79,23 @@ export function RoomsToolbar() {
     send(NO_ROOM_FILTERS);
   }
 
+  const [exporting, startExport] = useTransition();
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  // Exports what the table shows, so it follows the URL, not a search still
+  // being typed.
+  function exportRooms() {
+    setExportError(null);
+    startExport(async () => {
+      const result = await exportRoomsXlsx(filtersFromParams(searchParams));
+      if (!result.ok) {
+        setExportError(result.message);
+        return;
+      }
+      downloadXlsx(Uint8Array.from(atob(result.base64), (c) => c.charCodeAt(0)), `trsyp-rooms-${localDate(new Date())}.xlsx`);
+    });
+  }
+
   const typing = roomsHref(filters) !== sentHref;
   const filtered = isRoomsFiltered(filters);
 
@@ -114,10 +133,19 @@ export function RoomsToolbar() {
           <option value="full">Full</option>
           <option value="waiting">Waiting for roommate</option>
         </select>
+        <button
+          type="button"
+          className="admin-btn-secondary shrink-0 px-4 py-2 text-sm"
+          onClick={exportRooms}
+          disabled={exporting}
+        >
+          {exporting ? 'Exporting…' : 'Export Excel'}
+        </button>
       </div>
 
-      {(filtered || typing || loading) && (
+      {(filtered || typing || loading || exportError) && (
         <div className="part-toolbar-foot" aria-live="polite">
+          {exportError && <span className="pay-error">{exportError}</span>}
           {(typing || loading) && <span>Searching…</span>}
           {filtered && (
             <button type="button" className="pay-link" onClick={clear}>
@@ -128,4 +156,9 @@ export function RoomsToolbar() {
       )}
     </div>
   );
+}
+
+function localDate(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }

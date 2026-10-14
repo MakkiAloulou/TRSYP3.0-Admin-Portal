@@ -1,7 +1,8 @@
 import { IEEE_CHECK_LABELS, evaluateIeee, hasIeeeResult, isRasMember, recordSummary } from '@/lib/ieee-verification';
+import type { XlsxColumn } from '@/lib/xlsx';
 import type { ParticipantRow } from './participants-table';
 
-type IeeeCsvRow = Pick<ParticipantRow, 'participantType' | 'ieeeId' | 'isRas' | 'careerStage' | 'user' | 'ieeeVerification'>;
+type IeeeRow = Pick<ParticipantRow, 'participantType' | 'ieeeId' | 'isRas' | 'careerStage' | 'user' | 'ieeeVerification'>;
 
 /**
  * The IEEE verification columns, shared by the participants and team exports.
@@ -10,7 +11,7 @@ type IeeeCsvRow = Pick<ParticipantRow, 'participantType' | 'ieeeId' | 'isRas' | 
  * one for an old member number or email no longer describes them, so those
  * rows show "No verification yet" and nothing else. Career stage is the participant's own answer.
  */
-export const IEEE_CSV_COLUMNS: { header: string; value: (p: IeeeCsvRow) => string }[] = [
+export const IEEE_COLUMNS: XlsxColumn<IeeeRow>[] = [
   { header: 'Career stage', value: (p) => p.careerStage ?? '' },
   { header: 'IEEE check', value: (p) => IEEE_CHECK_LABELS[evaluateIeee(p).state] },
   {
@@ -59,7 +60,7 @@ export const IEEE_CSV_COLUMNS: { header: string; value: (p: IeeeCsvRow) => strin
 ];
 
 /** The stored result, if it still describes the participant. */
-function current(p: IeeeCsvRow) {
+function current(p: IeeeRow) {
   const state = evaluateIeee(p).state;
   return hasIeeeResult(state) ? p.ieeeVerification : null;
 }
