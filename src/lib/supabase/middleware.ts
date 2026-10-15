@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 // Refreshes the Supabase session cookie on every request. This does NOT
 // check whether the user is an admin — that check needs Prisma, which needs
 // the Node.js runtime, and Next.js middleware runs on the Edge runtime. The
-// actual admin gate lives in src/app/(dashboard)/layout.tsx instead.
+// actual admin gate lives in src/lib/require-admin.ts instead.
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
 

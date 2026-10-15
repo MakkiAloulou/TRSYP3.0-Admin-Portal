@@ -3226,3 +3226,957 @@ tr[data-reviewed='REJECTED'] {
     transform: none;
   }
 }
+
+/* ─── Competition draw (/draw) ────────────────────────
+   A stage for the venue screen, not a dashboard page: no navbar, and exactly
+   one screen tall at any size. Nothing scrolls, so the blocks share the
+   height, and type and spacing grow from --u, whichever of the screen's width
+   or height is the tighter fit. Every match puts a green corner against a
+   pink one, the logo's two colours, kept soft: light, never glare. */
+
+html:has(.draw-page) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+.draw-page {
+  --u: min(1vw, 1.78vh);
+  --draw-ink-2: rgba(255, 255, 255, 0.66);
+  --draw-ink-3: rgba(255, 255, 255, 0.48);
+  --draw-line: rgba(255, 255, 255, 0.07);
+  --draw-surface: linear-gradient(145deg, rgba(10, 15, 30, 0.86), rgba(5, 8, 18, 0.92));
+  --draw-green: rgba(0, 232, 122, 0.8);
+  --draw-pink: rgba(255, 29, 120, 0.8);
+  --draw-ease: cubic-bezier(0.22, 1, 0.36, 1);
+
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(10px, calc(var(--u) * 2.2), 40px);
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  padding: clamp(12px, calc(var(--u) * 1.8), 36px) clamp(16px, calc(var(--u) * 3.2), 64px);
+}
+
+.draw-page ::selection {
+  background: rgba(0, 232, 122, 0.28);
+  color: #ffffff;
+}
+
+/* The two corners' light, faint, from either side of the hall. */
+.draw-page::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(50% 55% at 0% 0%, rgba(0, 232, 122, 0.06), transparent 70%),
+    radial-gradient(50% 55% at 100% 0%, rgba(255, 29, 120, 0.06), transparent 70%);
+  pointer-events: none;
+}
+
+/* The arena floor, receding into the dark under everything. */
+.draw-page::after {
+  content: '';
+  position: absolute;
+  right: -50%;
+  bottom: 0;
+  left: -50%;
+  z-index: -1;
+  height: 50%;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 72px 72px;
+  transform: perspective(520px) rotateX(64deg);
+  transform-origin: 50% 100%;
+  -webkit-mask-image: linear-gradient(to top, #000 0%, transparent 75%);
+  mask-image: linear-gradient(to top, #000 0%, transparent 75%);
+  pointer-events: none;
+}
+
+/* ─── Top bar ─── */
+
+.draw-top {
+  display: grid;
+  flex: none;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  min-height: 40px;
+}
+
+.draw-logo {
+  grid-column: 2;
+  display: block;
+  width: auto;
+  height: clamp(28px, calc(var(--u) * 2.8), 48px);
+  object-fit: contain;
+}
+
+.draw-icon-btn {
+  grid-column: 3;
+  justify-self: end;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--draw-ink-3);
+  transition:
+    color 200ms ease,
+    border-color 200ms ease,
+    background-color 200ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.draw-icon-btn svg {
+  width: 19px;
+  height: 19px;
+}
+
+.draw-icon-btn:active {
+  transform: scale(0.95);
+}
+
+.draw-icon-btn:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 3px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .draw-icon-btn:hover {
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.04);
+  }
+}
+
+/* ─── Stage ─── */
+
+.draw-main {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(12px, calc(var(--u) * 2.4), 48px);
+  width: 100%;
+  min-height: 0;
+  max-width: 1480px;
+  margin: 0 auto;
+}
+
+.draw-title {
+  flex: none;
+  font-family: var(--font-heading);
+  font-size: clamp(1.3rem, calc(var(--u) * 3.2), 3.4rem);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  text-align: center;
+  text-wrap: balance;
+}
+
+.draw-page[data-phase='leaderboard'] .draw-title {
+  font-size: clamp(1.3rem, calc(var(--u) * 2.6), 2.8rem);
+}
+
+/* ─── The pool ───
+   Asks for its natural height and gives some back when the screen is short. */
+
+.draw-pool {
+  --rows: 4;
+  --gap: clamp(8px, calc(var(--u) * 1.1), 20px);
+  --tile-h: clamp(110px, calc(var(--u) * 13.5), 260px);
+
+  display: grid;
+  flex: 0 1 calc(var(--rows) * var(--tile-h) + (var(--rows) - 1) * var(--gap));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+  gap: var(--gap);
+  min-height: 0;
+  list-style: none;
+}
+
+@media (min-width: 720px) {
+  .draw-pool {
+    --rows: 2;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.draw-pool[data-compact] {
+  --rows: 2;
+  --tile-h: clamp(46px, calc(var(--u) * 4.6), 84px);
+  flex: none;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: none;
+}
+
+.draw-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: clamp(8px, calc(var(--u) * 1), 18px);
+  min-width: 0;
+  min-height: 0;
+  padding: clamp(16px, calc(var(--u) * 2.2), 38px);
+  border-radius: 16px;
+  background: var(--draw-surface);
+  border: 1px solid var(--draw-line);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  transition:
+    transform 240ms var(--draw-ease),
+    border-color 240ms ease,
+    box-shadow 240ms ease,
+    opacity 600ms ease;
+}
+
+/* Powering on, one after another. */
+.draw-pool:not([data-compact]) .draw-tile {
+  animation: drawTileOn 800ms var(--draw-ease) both;
+  animation-delay: calc(var(--i) * 70ms + 120ms);
+}
+
+@keyframes drawTileOn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(6px);
+  }
+}
+
+.draw-pool[data-compact] .draw-tile {
+  /* The right side leaves room for the status light. */
+  gap: clamp(4px, calc(var(--u) * 0.45), 8px);
+  padding: clamp(12px, calc(var(--u) * 1.3), 24px) clamp(26px, calc(var(--u) * 2), 38px)
+    clamp(12px, calc(var(--u) * 1.3), 24px) clamp(14px, calc(var(--u) * 1.5), 28px);
+  border-radius: 12px;
+}
+
+/* A status light: dim on standby, lit in its corner's colour once drawn. */
+.draw-tile-led {
+  position: absolute;
+  top: clamp(14px, calc(var(--u) * 1.6), 28px);
+  right: clamp(14px, calc(var(--u) * 1.8), 32px);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background-color 300ms ease;
+}
+
+.draw-pool[data-compact] .draw-tile-led {
+  top: 12px;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+}
+
+.draw-tile-name {
+  font-family: var(--font-heading);
+  font-size: clamp(1rem, calc(var(--u) * 1.9), 2rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.draw-pool[data-compact] .draw-tile-name {
+  font-size: clamp(0.85rem, calc(var(--u) * 1.1), 1.25rem);
+}
+
+.draw-tile-branch,
+.draw-tile-tag {
+  font-size: clamp(11px, calc(var(--u) * 0.95), 17px);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--draw-ink-2);
+}
+
+.draw-pool[data-compact] :is(.draw-tile-branch, .draw-tile-tag) {
+  font-size: clamp(11px, calc(var(--u) * 0.75), 14px);
+}
+
+/* Phones: the pool row becomes a wrap of name chips, so full names fit. */
+@media (max-width: 600px) {
+  .draw-pool[data-compact] {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .draw-pool[data-compact] .draw-tile {
+    padding: 6px 22px 6px 12px;
+    border-radius: 999px;
+  }
+
+  .draw-pool[data-compact] .draw-tile-led {
+    top: 50%;
+    right: 10px;
+    translate: 0 -50%;
+  }
+
+  .draw-pool[data-compact] .draw-tile-name {
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .draw-pool[data-compact] :is(.draw-tile-branch, .draw-tile-tag, .draw-branch-logo) {
+    display: none;
+  }
+
+  .draw-slot .draw-branch-logo {
+    height: 1.5em;
+  }
+}
+
+/* The branch's logo plate sits before its name; until a logo is set, an
+   empty plate holds the place. On the pink side it sits on the outer edge. */
+.draw-branch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6em;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.draw-branch-logo {
+  flex: none;
+  width: auto;
+  height: 1.9em;
+  aspect-ratio: 2;
+  border-radius: 0.3em;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.04);
+  outline: 1px solid rgba(255, 255, 255, 0.1);
+  outline-offset: -1px;
+}
+
+/* The card's emblem: top-left in the lineup, at the left of the row once
+   the cards shrink into the pool. */
+.draw-tile > .draw-branch-logo {
+  align-self: center;
+  height: clamp(28px, calc(var(--u) * 3.2), 62px);
+  border-radius: 8px;
+}
+
+.draw-tile-body {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(2px, calc(var(--u) * 0.35), 8px);
+  min-width: 0;
+}
+
+/* The lineup card is a centred stack: logo, name, branch. */
+.draw-pool:not([data-compact]) .draw-tile {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.draw-pool:not([data-compact]) .draw-tile-body {
+  align-items: center;
+}
+
+.draw-pool[data-compact] .draw-tile {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.draw-pool[data-compact] .draw-tile > .draw-branch-logo {
+  align-self: center;
+}
+
+.draw-pool[data-compact] .draw-tile > .draw-branch-logo {
+  height: clamp(30px, calc(var(--u) * 2.6), 50px);
+  border-radius: 6px;
+}
+
+/* Narrower screens: the pool row keeps the names and lets the logos go. */
+@media (max-width: 1099px) {
+  .draw-pool[data-compact] .draw-tile > .draw-branch-logo {
+    display: none;
+  }
+}
+
+.draw-branch-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draw-branch[data-tbd] .draw-branch-name {
+  color: var(--draw-ink-3);
+}
+
+.draw-slot[data-corner='pink'] .draw-branch {
+  flex-direction: row-reverse;
+}
+
+
+/* The light gliding over the pool, in the colour of the corner being picked. */
+.draw-tile[data-spot] {
+  z-index: 1;
+  transform: translateY(-2px);
+}
+
+.draw-tile[data-spot='green'] {
+  border-color: rgba(0, 232, 122, 0.5);
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(0, 232, 122, 0.12), transparent 70%),
+    var(--draw-surface);
+  box-shadow: 0 12px 30px -10px rgba(0, 232, 122, 0.3);
+}
+
+.draw-tile[data-spot='pink'] {
+  border-color: rgba(255, 29, 120, 0.5);
+  background:
+    radial-gradient(120% 120% at 50% 0%, rgba(255, 29, 120, 0.12), transparent 70%),
+    var(--draw-surface);
+  box-shadow: 0 12px 30px -10px rgba(255, 29, 120, 0.3);
+}
+
+.draw-tile[data-spot='green'] .draw-tile-led,
+.draw-tile[data-drawn='green'] .draw-tile-led {
+  background: var(--draw-green);
+}
+
+.draw-tile[data-spot='pink'] .draw-tile-led,
+.draw-tile[data-drawn='pink'] .draw-tile-led {
+  background: var(--draw-pink);
+}
+
+/* Drawn: out of the pool, its light left on. */
+.draw-tile[data-drawn] {
+  opacity: 0.38;
+}
+
+/* ─── The matches ───
+   Cards keep a comfortable height and shrink together when the screen is short. */
+
+.draw-board {
+  --rows: 4;
+  --card-h: clamp(64px, calc(var(--u) * 9.5), 180px);
+
+  --gap: clamp(12px, calc(var(--u) * 1.8), 30px);
+
+  display: grid;
+  flex: 0 1 calc(var(--rows) * var(--card-h) + (var(--rows) - 1) * var(--gap));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+  gap: var(--gap) clamp(12px, calc(var(--u) * 1.6), 28px);
+  min-height: 0;
+  list-style: none;
+}
+
+@media (min-width: 960px) {
+  .draw-board {
+    --rows: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.draw-match {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(10px, calc(var(--u) * 1.6), 28px);
+  min-height: 0;
+  padding: 0 clamp(14px, calc(var(--u) * 2.2), 38px);
+  border-radius: 18px;
+  border: 1px solid var(--draw-line);
+  background:
+    radial-gradient(70% 160% at 0% 50%, rgba(0, 232, 122, 0.06), transparent 62%),
+    radial-gradient(70% 160% at 100% 50%, rgba(255, 29, 120, 0.06), transparent 62%),
+    var(--draw-surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+}
+
+/* The navbar's edge, green into pink: one match, two corners. */
+.draw-match::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: 24px;
+  left: 24px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(0, 232, 122, 0.35) 20%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 29, 120, 0.35) 80%,
+    transparent
+  );
+}
+
+/* Sits on the card's top edge, like a fieldset legend. */
+.draw-match-no {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% -50%;
+  padding: 2px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: #070b17;
+  font-size: clamp(11px, calc(var(--u) * 0.8), 14px);
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--draw-ink-3);
+}
+
+.draw-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(2px, calc(var(--u) * 0.3), 6px);
+  min-width: 0;
+}
+
+.draw-slot[data-corner='pink'] {
+  align-items: flex-end;
+  text-align: right;
+}
+
+.draw-slot-name {
+  max-width: 100%;
+  font-family: var(--font-heading);
+  font-size: clamp(0.95rem, calc(var(--u) * 1.75), 2rem);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
+}
+
+.draw-slot-branch {
+  font-size: clamp(12px, calc(var(--u) * 1), 18px);
+  color: var(--draw-ink-2);
+}
+
+/* A short rule in the corner's colour under each drawn name. */
+.draw-slot[data-filled]::after {
+  content: '';
+  width: clamp(22px, calc(var(--u) * 2.4), 42px);
+  height: 2px;
+  margin-top: clamp(2px, calc(var(--u) * 0.3), 6px);
+  border-radius: 2px;
+  background: var(--draw-green);
+  animation: drawRuleIn 700ms var(--draw-ease) 200ms both;
+}
+
+.draw-slot[data-corner='pink'][data-filled]::after {
+  background: var(--draw-pink);
+  animation-name: drawRuleInRight;
+}
+
+@keyframes drawRuleIn {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+}
+
+@keyframes drawRuleInRight {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+}
+
+/* Waiting for a name: a dim bar that brightens, slowly, while its corner is
+   being picked. */
+.draw-slot-empty {
+  display: block;
+  width: min(100%, 7em);
+  height: 1em;
+  border-radius: 8px;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  font-size: clamp(1rem, calc(var(--u) * 2.1), 2.3rem);
+  transition:
+    border-color 300ms ease,
+    background-color 300ms ease;
+}
+
+.draw-slot[data-active] .draw-slot-empty {
+  border-style: solid;
+  animation: drawSlotWait 1.6s ease-in-out infinite alternate;
+}
+
+.draw-slot[data-corner='green'][data-active] .draw-slot-empty {
+  border-color: rgba(0, 232, 122, 0.35);
+  background: rgba(0, 232, 122, 0.06);
+}
+
+.draw-slot[data-corner='pink'][data-active] .draw-slot-empty {
+  border-color: rgba(255, 29, 120, 0.35);
+  background: rgba(255, 29, 120, 0.06);
+}
+
+@keyframes drawSlotWait {
+  from {
+    opacity: 0.55;
+  }
+}
+
+.draw-vs {
+  display: grid;
+  place-items: center;
+  width: clamp(36px, calc(var(--u) * 3.6), 64px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#070b17, #070b17) padding-box,
+    linear-gradient(135deg, rgba(0, 232, 122, 0.5), rgba(255, 29, 120, 0.5)) border-box;
+  font-size: clamp(11px, calc(var(--u) * 0.95), 17px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--draw-ink-2);
+  opacity: 0.5;
+  transition:
+    opacity 600ms ease,
+    color 600ms ease;
+}
+
+.draw-match[data-complete] .draw-vs {
+  opacity: 1;
+  color: #ffffff;
+}
+
+/* Each letter of a drawn name settles in after the one before it. */
+.draw-reveal-word {
+  white-space: nowrap;
+}
+
+.draw-reveal-char {
+  display: inline-block;
+  white-space: pre;
+  animation: drawCharIn 700ms var(--draw-ease) both;
+  animation-delay: calc(var(--c) * 40ms);
+}
+
+@keyframes drawCharIn {
+  from {
+    opacity: 0;
+    transform: translateY(0.2em);
+    filter: blur(5px);
+  }
+}
+
+/* ─── The leaderboard ─── */
+
+.draw-standings {
+  flex: 0 1 auto;
+  align-self: center;
+  width: min(100%, 880px);
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid var(--draw-line);
+  background: var(--draw-surface);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
+}
+
+.draw-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.draw-table th {
+  padding: clamp(8px, calc(var(--u) * 0.7), 16px) clamp(12px, calc(var(--u) * 1.8), 32px);
+  border-bottom: 1px solid var(--draw-line);
+  font-size: clamp(11px, calc(var(--u) * 0.75), 14px);
+  font-weight: 500;
+  text-align: left;
+  color: var(--draw-ink-3);
+}
+
+.draw-table abbr {
+  text-decoration: none;
+  cursor: help;
+}
+
+.draw-table td {
+  padding: clamp(5px, calc(var(--u) * 0.45), 12px) clamp(12px, calc(var(--u) * 1.8), 32px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  vertical-align: middle;
+}
+
+.draw-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.draw-table tbody tr {
+  animation: drawRowIn 700ms var(--draw-ease) both;
+  animation-delay: calc(var(--i) * 60ms + 80ms);
+}
+
+@keyframes drawRowIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(4px);
+  }
+}
+
+.draw-table .draw-col-rank {
+  width: 1%;
+  padding-right: 0;
+  color: var(--draw-ink-3);
+}
+
+.draw-table td.draw-col-rank {
+  font-size: clamp(13px, calc(var(--u) * 1), 18px);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.draw-lb-team {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-heading);
+  font-size: clamp(14px, calc(var(--u) * 1.2), 1.4rem);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: 0.02em;
+}
+
+.draw-lb-led {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.draw-lb-led[data-corner='green'] {
+  background: var(--draw-green);
+}
+
+.draw-lb-led[data-corner='pink'] {
+  background: var(--draw-pink);
+}
+
+/* The opponent, small under the name, in their corner's colour. */
+.draw-lb-sub {
+  display: block;
+  margin-top: 2px;
+  padding-left: 17px;
+  font-size: clamp(11px, calc(var(--u) * 0.85), 15px);
+  line-height: 1.3;
+  color: var(--draw-ink-3);
+}
+
+.draw-lb-opp {
+  font-weight: 500;
+}
+
+.draw-lb-opp[data-corner='green'] {
+  color: var(--draw-green);
+}
+
+.draw-lb-opp[data-corner='pink'] {
+  color: var(--draw-pink);
+}
+
+.draw-lb-branch-inline {
+  display: none;
+}
+
+.draw-table td.draw-col-sb {
+  font-size: clamp(13px, calc(var(--u) * 1), 18px);
+  color: var(--draw-ink-2);
+  white-space: nowrap;
+}
+
+.draw-table .draw-col-played {
+  width: 1%;
+  text-align: center;
+}
+
+.draw-cross {
+  display: block;
+  width: clamp(22px, calc(var(--u) * 1.6), 30px);
+  height: clamp(22px, calc(var(--u) * 1.6), 30px);
+  margin: 0 auto;
+  padding: 4px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 29, 120, 0.35);
+  color: var(--draw-pink);
+}
+
+.draw-table .draw-col-pts {
+  width: 1%;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.draw-table td.draw-col-pts {
+  font-size: clamp(16px, calc(var(--u) * 1.5), 1.75rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Phones: the branch moves under the name, beside the opponent. */
+@media (max-width: 600px) {
+  .draw-table .draw-col-sb {
+    display: none;
+  }
+
+  .draw-lb-branch-inline {
+    display: inline;
+  }
+}
+
+/* ─── Actions ───
+   Every button wears the same rim: the two corners' colours meeting around a
+   pill. The draw's opening invitation also breathes. */
+
+.draw-actions {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.draw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: clamp(12px, calc(var(--u) * 1.1), 20px) clamp(24px, calc(var(--u) * 2.4), 44px);
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background:
+    linear-gradient(#070b17, #070b17) padding-box,
+    linear-gradient(90deg, rgba(0, 232, 122, 0.55), rgba(255, 29, 120, 0.55)) border-box;
+  box-shadow:
+    -8px 12px 30px -14px rgba(0, 232, 122, 0.25),
+    8px 12px 30px -14px rgba(255, 29, 120, 0.25);
+  font-family: var(--font-heading);
+  font-size: clamp(12px, calc(var(--u) * 0.9), 16px);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #ffffff;
+  transition: transform 160ms var(--ease-out);
+}
+
+.draw-btn--ignite {
+  animation:
+    drawIgniteIn 900ms var(--draw-ease) 700ms both,
+    drawIgniteBreathe 3.6s ease-in-out 1.6s infinite alternate;
+}
+
+@keyframes drawIgniteIn {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+@keyframes drawIgniteBreathe {
+  to {
+    box-shadow:
+      -10px 14px 36px -12px rgba(0, 232, 122, 0.45),
+      10px 14px 36px -12px rgba(255, 29, 120, 0.45);
+  }
+}
+
+.draw-btn-icon {
+  width: 1.3em;
+  height: 1.3em;
+  color: var(--draw-green);
+}
+
+.draw-btn:active {
+  transform: scale(0.97);
+}
+
+.draw-btn:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 4px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .draw-btn {
+    transition:
+      transform 160ms var(--ease-out),
+      background 300ms ease;
+  }
+
+  .draw-btn:hover {
+    background:
+      linear-gradient(#0a1020, #0a1020) padding-box,
+      linear-gradient(90deg, rgba(0, 232, 122, 0.8), rgba(255, 29, 120, 0.8)) border-box;
+  }
+}
+
+/* Only shown when storing the draw failed: the result on screen is not in
+   the database yet. */
+.draw-save-error {
+  flex: none;
+  font-size: clamp(12px, calc(var(--u) * 0.9), 15px);
+  text-align: center;
+  color: var(--draw-pink);
+}
+
+.draw-save-error button {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  color: #ffffff;
+}
+
+.draw-save-error button:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* ─── Phase changes ───
+   The draw page is the only one that starts view transitions; these set
+   their pace. Tiles glide from the lineup into the pool row. */
+
+::view-transition-group(*) {
+  animation-duration: 700ms;
+  animation-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 450ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draw-btn--ignite,
+  .draw-slot[data-active] .draw-slot-empty,
+  .draw-slot[data-filled]::after {
+    animation: none;
+  }
+
+  .draw-tile,
+  .draw-tile[data-spot],
+  .draw-btn:active {
+    transform: none;
+  }
+
+  .draw-pool:not([data-compact]) .draw-tile,
+  .draw-table tbody tr,
+  .draw-reveal-char {
+    animation-name: adminModalFadeIn;
+  }
+}

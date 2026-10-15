@@ -13,7 +13,7 @@ import { createClient } from '@/lib/supabase/server';
  *
  * Auth is the admin's own Supabase access token, forwarded as a bearer token.
  * The backend's AdminGuard resolves it against the same `admins` table that
- * src/app/(dashboard)/layout.tsx checks, so the two cannot disagree.
+ * src/lib/require-admin.ts checks, so the two cannot disagree.
  *
  * Called from Server Actions and server components only, so this is
  * server-to-server: no preflight, no CORS, and the URL never reaches the

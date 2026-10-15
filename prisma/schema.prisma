@@ -227,6 +227,20 @@ model IeeeVerification {
   @@map("ieee_verifications")
 }
 
+/// The competition draw's result, one row per match. Owned by the admin
+/// portal, not the backend: created by prisma/sql/competition_draw.sql. Each
+/// new draw replaces all four rows. Teams are stored by their key in
+/// src/app/draw/teams.ts.
+model CompetitionDrawMatch {
+  matchNumber Int      @id @map("match_number")
+  greenTeam   String   @map("green_team")
+  pinkTeam    String   @map("pink_team")
+  drawnAt     DateTime @default(now()) @map("drawn_at")
+  drawnBy     String   @map("drawn_by") // admins.id
+
+  @@map("competition_draw_matches")
+}
+
 // Enums
 
 enum IeeeCheckStatus {
