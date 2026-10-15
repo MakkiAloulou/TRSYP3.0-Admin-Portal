@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { PROOFS_TAKE, getAllProofs } from '@/lib/payment-proofs';
+import { PROOFS_TAKE, getAllProofs, withAdminFees } from '@/lib/payment-proofs';
 import {
   PAYMENT_PROOF_STATUSES,
   PAYMENT_TYPES,
@@ -79,7 +79,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     );
   }
 
-  const current = latestProofPerParticipant(result.data.data).sort(byOldestFirst);
+  const current = (await withAdminFees(latestProofPerParticipant(result.data.data))).sort(byOldestFirst);
   const matching =
     status === 'ALL'
       ? current
@@ -133,14 +133,14 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
 /**
  * The money in, by how it arrived. Every tab shows the same figures: they
- * total each participant's newest approved proof at the amount they paid
- * (amountSnapshot, as the dashboard's Fees collected does), whichever tab is
- * open. Approved payments not typed yet make the fourth tile, so the four
+ * total each participant's newest approved proof at their fee as this portal
+ * prices it (currentFee after withAdminFees, as the rows and the dashboard's
+ * Fees collected show it), whichever tab is open. Approved payments not typed yet make the fourth tile, so the four
  * always add up to everything collected.
  */
 function MoneyTiles({ current }: { current: PaymentProofRow[] }) {
   const approved = current.filter((proof) => proof.status === 'APPROVED');
-  const sum = (proofs: PaymentProofRow[]) => proofs.reduce((total, proof) => total + proof.amountSnapshot, 0);
+  const sum = (proofs: PaymentProofRow[]) => proofs.reduce((total, proof) => total + proof.currentFee, 0);
   const untyped = approved.filter((proof) => proof.paymentType === null);
 
   return (

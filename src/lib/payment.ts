@@ -62,7 +62,9 @@ export type PaymentProofRow = {
   participantEmail: string;
   /** What the participant owes right now. Computed by the backend per request
    *  from facts that can change after registration (RAS toggle, membership
-   *  type, joining a team), which is why it is never a stored column. */
+   *  type, joining a team), which is why it is never a stored column. The
+   *  Payments page re-prices it with feeFor (withAdminFees), since the backend
+   *  knows neither fee overrides nor the flat Fablab fee. */
   currentFee: number;
   participantPaid: boolean;
   /** Set by the treasurer on approved payments; null means "To confirm". */

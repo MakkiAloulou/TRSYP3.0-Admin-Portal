@@ -195,16 +195,13 @@ async function PaymentTiles({ participants }: { participants: OverviewParticipan
     null,
   );
 
-  // Money. A paid participant counts at what their approved proof was priced
-  // at — the amount actually handed over — falling back to the current fee if
-  // there is no such proof. Everyone not banned is expected to pay.
-  const paidAmount = new Map(
-    latestProofs.filter((p) => p.status === 'APPROVED').map((p) => [p.participantId, p.amountSnapshot]),
-  );
-  const owed = (p: OverviewParticipant) => (p.paid ? (paidAmount.get(p.id) ?? feeFor(p)) : feeFor(p));
+  // Money, at each participant's fee as this portal prices it — what the
+  // Payments page totals too. Not the proof's amountSnapshot: the backend
+  // priced that without fee overrides or the flat Fablab fee. Everyone not
+  // banned is expected to pay.
   const paidCount = participants.filter((p) => p.paid).length;
-  const collected = participants.filter((p) => p.paid).reduce((sum, p) => sum + owed(p), 0);
-  const expected = participants.filter((p) => p.paid || !p.banned).reduce((sum, p) => sum + owed(p), 0);
+  const collected = participants.filter((p) => p.paid).reduce((sum, p) => sum + feeFor(p), 0);
+  const expected = participants.filter((p) => p.paid || !p.banned).reduce((sum, p) => sum + feeFor(p), 0);
 
   return (
     <>
