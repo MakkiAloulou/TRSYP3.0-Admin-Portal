@@ -2778,6 +2778,159 @@ tr[data-reviewed='REJECTED'] {
   }
 }
 
+/* ─── Sessions (check-in attendance) ──────────────────── */
+
+/* Fixed layout on the list, so each day's card lines its columns up with the
+   next; the lists on a session's page size to their content instead. */
+.sess-table {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.sess-table--auto {
+  table-layout: auto;
+}
+
+.sess-table--auto td {
+  white-space: nowrap;
+}
+
+.sess-table--auto td.sess-cell-wide {
+  max-width: 280px;
+  white-space: normal;
+}
+
+/* A row of the list opens its session from anywhere on it: the title's link
+   is stretched over the row. */
+.sess-row {
+  position: relative;
+}
+
+.sess-row-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+}
+
+.sess-row-link:focus-visible {
+  outline: none;
+}
+
+.sess-row:has(.sess-row-link:focus-visible) {
+  outline: 2px solid var(--color-green);
+  outline-offset: -2px;
+}
+
+.sess-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sess-badges:empty {
+  display: none;
+}
+
+.sess-meter {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 220px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sess-meter-figures {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sess-meter-of {
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.sess-meter-rate {
+  font-weight: 600;
+  color: var(--color-green);
+}
+
+.sess-meter-track {
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--viz-track);
+}
+
+.sess-meter-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-green);
+}
+
+/* Below tablet width each row becomes a card: its first cell across the top,
+   then the rest two to a line, each named by its data-label since the header
+   is gone. */
+@media (max-width: 767px) {
+  .sess-table,
+  .sess-table tbody,
+  .sess-table tfoot {
+    display: block;
+  }
+
+  .sess-table colgroup,
+  .sess-table thead {
+    display: none;
+  }
+
+  .sess-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 16px;
+    padding: 14px 16px;
+  }
+
+  .sess-table td {
+    display: block;
+    min-width: 0;
+    padding: 0;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .sess-table td:first-child,
+  .sess-table td.sess-cell-wide,
+  .sess-table td.sess-cell-meter {
+    grid-column: 1 / -1;
+  }
+
+  .sess-table td:empty {
+    display: none;
+  }
+
+  .sess-table td.viz-empty {
+    grid-column: 1 / -1;
+    padding: 24px 0;
+    text-align: center;
+  }
+
+  .sess-table td[data-label]::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 2px;
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  .sess-meter {
+    max-width: none;
+  }
+}
+
 /* ─── Participant details popup ───────────────────────
    One rhythm throughout: a header, the payment strip, then quiet sections
    divided by hairlines — no coloured headings competing with the content. */
