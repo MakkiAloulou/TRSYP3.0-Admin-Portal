@@ -12,7 +12,7 @@ export type SaveRegisterResult =
   | { ok: false; stale: boolean; message: string };
 
 /**
- * Re-ranks the register: moves markers to other IDs, nothing else. What each
+ * Re-ranks the register: shuffles actions among the IDs in use, nothing else. What each
  * marker does is read back from the table here, never taken from the client,
  * so a save can't change a clue. The whole register is rewritten in one
  * transaction, so swapping two IDs is one save: no moment where both rows
@@ -26,6 +26,12 @@ export async function reassignIds(raw: unknown, version: string): Promise<SaveRe
   if (!Array.isArray(raw) || !raw.every(isMove)) return { ok: false, stale: false, message: 'Nothing to save.' };
   const moves = new Map((raw as Move[]).map((m) => [m.from, m.to]));
   if (moves.size !== raw.length) return { ok: false, stale: false, message: 'A marker was moved twice.' };
+  // The IDs are fixed: a save only shuffles actions between the IDs it moves
+  // them off, so every ID moved to must be one moved from.
+  const freed = new Set(moves.keys());
+  if (![...moves.values()].every((to) => freed.has(to))) {
+    return { ok: false, stale: false, message: 'Actions can only move between the IDs already in use.' };
+  }
 
   try {
     type Outcome = { stale: true } | { problem: string } | { saved: Awaited<ReturnType<typeof getRegister>> };

@@ -668,66 +668,106 @@ button {
 }
 
 /* ─── ArUco register ──────────────────────────────────── */
-/* Each row is two blocks: the ID (the only thing an admin changes) and the
-   fixed action it gives. Side by side at every width; the action wraps. */
+/* Two columns: the fixed IDs (the printed markers) and the action cards that
+   are dragged into a new order beside them. Cards are one line tall so every
+   slot is the same height and a drag never reflows the list. */
+
+.aruco-list {
+  padding: 0 16px 4px;
+}
 
 .aruco-row {
   display: grid;
-  grid-template-columns: 84px minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-  padding: 12px 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 4px 0;
 }
 
-.aruco-row[data-moved] {
-  background: rgba(0, 232, 122, 0.04);
-}
-
-.aruco-row[data-problem] {
-  background: rgba(255, 29, 120, 0.05);
-}
-
-.aruco-id {
+.aruco-slot {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.aruco-id-input {
-  width: 100%;
-  padding: 8px 10px;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  border-radius: 10px;
   font-family: var(--font-heading);
   font-size: 15px;
   font-weight: 700;
-  text-align: center;
   font-variant-numeric: tabular-nums;
-}
-
-.aruco-row[data-moved] .aruco-id-input {
   color: var(--color-green);
-  border-color: rgba(0, 232, 122, 0.35);
+  background: rgba(0, 232, 122, 0.06);
+  border: 1px solid rgba(0, 232, 122, 0.18);
 }
 
-.aruco-id-was {
-  font-size: 11px;
-  text-align: center;
-  color: rgba(255, 255, 255, 0.45);
+.aruco-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 12px 0 4px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: grab;
+  user-select: none;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.aruco-card[data-moved] {
+  border-color: rgba(0, 232, 122, 0.3);
+}
+
+/* The card in hand: above the others, and no transition so it tracks the
+   pointer exactly. */
+.aruco-card[data-lifted] {
+  z-index: 2;
+  cursor: grabbing;
+  background: #0b1424;
+  border-color: rgba(0, 232, 122, 0.5);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 232, 122, 0.2);
+  transition: none;
+}
+
+.aruco-list[data-dragging] {
+  cursor: grabbing;
+}
+
+.aruco-grip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 40px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.35);
+  /* A finger on the grip drags; anywhere else on the card still scrolls. */
+  touch-action: none;
+  cursor: inherit;
+}
+
+.aruco-grip:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: -2px;
 }
 
 .aruco-action {
+  flex: 1;
   min-width: 0;
-  padding-top: 2px;
 }
 
 .aruco-action-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .aruco-action-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 14px;
   font-weight: 500;
   color: #ffffff;
@@ -739,16 +779,45 @@ button {
 }
 
 .aruco-action-gives {
-  margin-top: 4px;
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.6);
-  overflow-wrap: anywhere;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.55);
 }
 
-.aruco-problem {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--color-pink);
+.aruco-was {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .aruco-card:not([data-lifted]):hover {
+    border-color: rgba(255, 255, 255, 0.18);
+  }
+
+  .aruco-list[data-dragging] .aruco-card:not([data-lifted]):hover {
+    border-color: rgba(255, 255, 255, 0.08);
+  }
+}
+
+@media (max-width: 767px) {
+  .aruco-list {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .aruco-row {
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .aruco-action-kind {
+    display: none;
+  }
 }
 
 .aruco-chip {

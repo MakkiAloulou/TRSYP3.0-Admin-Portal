@@ -1,46 +1,34 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useTransition } from 'react';
 import { reassignIds } from './actions';
-import { KIND_LABELS, MAX_MARKER_ID, idProblems, type Marker, type MarkerKind } from './aruco-types';
+import { KIND_LABELS, type Marker } from './aruco-types';
 
-const KIND_ORDER: Record<MarkerKind, number> = { beacon: 0, indicator: 1, collector: 2 };
-
-/** Game, then kind, then ID: how the register reads on the field. */
-function sorted(markers: Marker[]): Marker[] {
-  return [...markers].sort(
-    (a, b) =>
-      a.game.localeCompare(b.game) || KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || a.markerId - b.markerId,
-  );
+function byId(markers: Marker[]): Marker[] {
+  return [...markers].sort((a, b) => a.markerId - b.markerId);
 }
 
-/** Each marker's new ID, by the ID it has now. Starts as every marker where it is. */
-function unmoved(markers: Marker[]): Map<number, number> {
-  return new Map(markers.map((m) => [m.markerId, m.markerId]));
-}
+/** An action card being dragged: where on it it was grabbed, and where the pointer is. */
+type Drag = { id: number; pointerId: number; grabOffset: number; pointerY: number };
 
 /**
- * Re-ranks the ArUco register: which printed ID carries which action. Each
- * row is the ID, which is the only thing that changes, and the action it
- * gives, which is fixed. Edits stay local until saved, and a save applies
- * them all at once, so swapping two IDs is changing both and saving once.
+ * Re-ranks the ArUco register. The IDs on the left are fixed: the printed
+ * markers in use. The actions on the right are dragged into a new order, and
+ * each takes the ID of the slot it lands beside. Edits stay local until
+ * saved; a save applies them all at once.
  */
 export function RegisterEditor({ initial, initialVersion }: { initial: Marker[]; initialVersion: string }) {
-  const [markers, setMarkers] = useState(() => sorted(initial));
+  const [slots, setSlots] = useState(() => byId(initial).map((m) => m.markerId));
+  const [order, setOrder] = useState(() => byId(initial));
   const [version, setVersion] = useState(initialVersion);
-  const [ids, setIds] = useState(() => unmoved(initial));
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const [announcement, setAnnouncement] = useState('');
   const [status, setStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [pending, startTransition] = useTransition();
+  const cards = useRef(new Map<number, HTMLElement>());
 
-  const newIds = markers.map((m) => ids.get(m.markerId) ?? m.markerId);
-  const problems = idProblems(newIds);
-  const moves = markers
-    .map((m, i) => ({ from: m.markerId, to: newIds[i] }))
-    .filter((move) => move.from !== move.to);
+  const moves = order.map((m, i) => ({ from: m.markerId, to: slots[i] })).filter((m) => m.from !== m.to);
   const dirty = moves.length > 0;
-
-  const taken = new Set(newIds);
-  const freeIds = Array.from({ length: MAX_MARKER_ID + 1 }, (_, id) => id).filter((id) => !taken.has(id));
 
   // A tab closed mid-edit would lose the edits without a word.
   useEffect(() => {
@@ -50,14 +38,82 @@ export function RegisterEditor({ initial, initialVersion }: { initial: Marker[];
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty]);
 
-  function setId(current: number, next: number) {
+  function moveTo(id: number, target: number) {
     setStatus(null);
-    setIds((prev) => new Map(prev).set(current, next));
+    setOrder((current) => {
+      const from = current.findIndex((m) => m.markerId === id);
+      if (from === -1 || from === target) return current;
+      const next = [...current];
+      const [card] = next.splice(from, 1);
+      next.splice(target, 0, card);
+      return next;
+    });
+  }
+
+  // ── Pointer drag ─────────────────────────────────────────────────────────
+
+  function startDrag(event: React.PointerEvent<HTMLElement>, id: number) {
+    // Mouse drags from anywhere on the card; touch only from the grip, so a
+    // finger on a card still scrolls the page.
+    const fromGrip = (event.target as HTMLElement).closest('.aruco-grip') !== null;
+    if (event.button !== 0 || (event.pointerType !== 'mouse' && !fromGrip) || pending) return;
+    const card = cards.current.get(id);
+    if (!card) return;
+    event.preventDefault();
+    card.setPointerCapture(event.pointerId);
+    const grabOffset = event.clientY - card.getBoundingClientRect().top;
+    setDrag({ id, pointerId: event.pointerId, grabOffset, pointerY: event.clientY });
+  }
+
+  function moveDrag(event: React.PointerEvent<HTMLElement>) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+
+    // Its slot is the number of other cards whose middle is above the pointer.
+    let target = 0;
+    for (const m of order) {
+      if (m.markerId === drag.id) continue;
+      const rect = cards.current.get(m.markerId)?.getBoundingClientRect();
+      if (rect && rect.top + rect.height / 2 < event.clientY) target++;
+    }
+    moveTo(drag.id, target);
+    setDrag({ ...drag, pointerY: event.clientY });
+  }
+
+  function endDrag(event: React.PointerEvent<HTMLElement>) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    setDrag(null);
+  }
+
+  // The lifted card follows the pointer from wherever the layout puts it now:
+  // measured after each render, so a reorder under it never makes it jump.
+  useLayoutEffect(() => {
+    if (!drag) return;
+    const card = cards.current.get(drag.id);
+    if (!card) return;
+    card.style.transform = '';
+    const naturalTop = card.getBoundingClientRect().top;
+    card.style.transform = `translateY(${drag.pointerY - drag.grabOffset - naturalTop}px)`;
+    return () => {
+      card.style.transform = '';
+    };
+  }, [drag, order]);
+
+  // ── Keyboard: arrows on the grip move the card one slot ──────────────────
+
+  function onGripKey(event: React.KeyboardEvent, id: number, index: number) {
+    const step = event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : 0;
+    const target = index + step;
+    if (!step || target < 0 || target >= order.length) return;
+    event.preventDefault();
+    moveTo(id, target);
+    setAnnouncement(`${spoken(order[index])} moved to ID ${slots[target]}.`);
+    // The card re-renders in its new slot; keep focus on its grip.
+    requestAnimationFrame(() => cards.current.get(id)?.querySelector<HTMLElement>('.aruco-grip')?.focus());
   }
 
   function discard() {
     setStatus(null);
-    setIds(unmoved(markers));
+    setOrder(byId(order));
   }
 
   function save() {
@@ -67,10 +123,11 @@ export function RegisterEditor({ initial, initialVersion }: { initial: Marker[];
         setStatus({ ok: false, message: result.message });
         return;
       }
-      setMarkers(sorted(result.markers));
+      const saved = byId(result.markers);
+      setSlots(saved.map((m) => m.markerId));
+      setOrder(saved);
       setVersion(result.version);
-      setIds(unmoved(result.markers));
-      setStatus({ ok: true, message: 'Saved. Scans on /aruco use the new IDs from now on.' });
+      setStatus({ ok: true, message: 'Saved. Scans on /aruco use the new order from now on.' });
     });
   }
 
@@ -81,44 +138,79 @@ export function RegisterEditor({ initial, initialVersion }: { initial: Marker[];
           Marker register
         </h3>
         <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          Change an ID to give its action to another printed marker (DICT_4X4_50, 0–{MAX_MARKER_ID}). To swap two,
-          change both, then save once.
+          The IDs are the printed markers and stay put. Drag an action next to another ID to give it to that marker;
+          the others shift to make room. Nothing changes on /aruco until you save.
         </p>
       </div>
 
-      {markers.length === 0 && (
+      {order.length === 0 && (
         <p className="viz-empty px-5 py-6 text-sm">The register is empty: every scan reads as “no marker”.</p>
       )}
 
-      <ol>
-        {markers.map((marker, i) => (
-          <MarkerRow
-            key={marker.markerId}
-            marker={marker}
-            newId={newIds[i]}
-            problem={problems.get(i)}
-            onChange={(next) => setId(marker.markerId, next)}
-          />
-        ))}
+      <ol className="aruco-list" data-dragging={drag ? '' : undefined}>
+        {order.map((marker, i) => {
+          const moved = marker.markerId !== slots[i];
+          return (
+            <li key={marker.markerId} className="aruco-row">
+              <span className="aruco-slot" aria-hidden>
+                {slots[i]}
+              </span>
+              <div
+                ref={(el) => {
+                  if (el) cards.current.set(marker.markerId, el);
+                  else cards.current.delete(marker.markerId);
+                }}
+                className="aruco-card"
+                data-moved={moved ? '' : undefined}
+                data-lifted={drag?.id === marker.markerId ? '' : undefined}
+                onPointerDown={(e) => startDrag(e, marker.markerId)}
+                onPointerMove={moveDrag}
+                onPointerUp={endDrag}
+                onPointerCancel={endDrag}
+              >
+                <button
+                  type="button"
+                  className="aruco-grip"
+                  aria-label={`${spoken(marker)}, at ID ${slots[i]}. Arrow up or down to move it.`}
+                  onKeyDown={(e) => onGripKey(e, marker.markerId, i)}
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden>
+                    <circle cx="9" cy="6" r="1.6" />
+                    <circle cx="15" cy="6" r="1.6" />
+                    <circle cx="9" cy="12" r="1.6" />
+                    <circle cx="15" cy="12" r="1.6" />
+                    <circle cx="9" cy="18" r="1.6" />
+                    <circle cx="15" cy="18" r="1.6" />
+                  </svg>
+                </button>
+                <div className="aruco-action">
+                  <p className="aruco-action-head">
+                    <span className="admin-badge admin-badge--gray">{marker.game}</span>
+                    <span className="aruco-action-name">{marker.name}</span>
+                    {marker.kind !== 'beacon' && <span className="aruco-action-kind">{KIND_LABELS[marker.kind]}</span>}
+                  </p>
+                  <p className="aruco-action-gives" title={gives(marker)}>
+                    {gives(marker)}
+                  </p>
+                </div>
+                {moved && <span className="aruco-was">was {marker.markerId}</span>}
+              </div>
+            </li>
+          );
+        })}
       </ol>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:px-5">
-        <p className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          {freeIds.length > 0 ? `Free IDs: ${freeIds.join(', ')}` : 'Every ID is in use.'}
-        </p>
-        <div className="flex items-center gap-2">
-          <button type="button" className="admin-btn-secondary px-3 py-2 text-sm" onClick={discard} disabled={!dirty || pending}>
-            Discard changes
-          </button>
-          <button
-            type="button"
-            className="admin-btn-primary px-4 py-2 text-xs"
-            onClick={save}
-            disabled={!dirty || pending || problems.size > 0}
-          >
-            {pending ? 'Saving…' : dirty ? `Save ${moves.length} change${moves.length === 1 ? '' : 's'}` : 'Save'}
-          </button>
-        </div>
+      <p className="sr-only" aria-live="polite">
+        {announcement}
+      </p>
+
+      <div className="flex flex-wrap items-center justify-end gap-2 p-4 sm:px-5">
+        <button type="button" className="admin-btn-secondary px-3 py-2 text-sm" onClick={discard} disabled={!dirty || pending}>
+          Discard changes
+        </button>
+        <button type="button" className="admin-btn-primary px-4 py-2 text-xs" onClick={save} disabled={!dirty || pending}>
+          {pending ? 'Saving…' : dirty ? `Save ${moves.length} change${moves.length === 1 ? '' : 's'}` : 'Save'}
+        </button>
       </div>
 
       {status && (
@@ -130,47 +222,9 @@ export function RegisterEditor({ initial, initialVersion }: { initial: Marker[];
   );
 }
 
-/** Two blocks: the ID (editable) and the action it gives (fixed). */
-function MarkerRow({
-  marker,
-  newId,
-  problem,
-  onChange,
-}: {
-  marker: Marker;
-  newId: number;
-  problem: string | undefined;
-  onChange: (next: number) => void;
-}) {
-  const moved = newId !== marker.markerId;
-  return (
-    <li className="aruco-row" data-moved={moved ? '' : undefined} data-problem={problem ? '' : undefined}>
-      <div className="aruco-id">
-        <input
-          className="admin-input aruco-id-input"
-          type="number"
-          inputMode="numeric"
-          min={0}
-          max={MAX_MARKER_ID}
-          value={Number.isNaN(newId) ? '' : newId}
-          aria-label={`ID of ${marker.name}`}
-          aria-invalid={problem ? true : undefined}
-          onChange={(e) => onChange(e.target.valueAsNumber)}
-        />
-        {moved && <span className="aruco-id-was">was {marker.markerId}</span>}
-      </div>
-
-      <div className="aruco-action">
-        <p className="aruco-action-head">
-          <span className="admin-badge admin-badge--gray">{marker.game}</span>
-          <span className="aruco-action-name">{marker.name}</span>
-          {marker.kind !== 'beacon' && <span className="aruco-action-kind">{KIND_LABELS[marker.kind]}</span>}
-        </p>
-        <p className="aruco-action-gives">{gives(marker)}</p>
-        {problem && <p className="aruco-problem">{problem}</p>}
-      </div>
-    </li>
-  );
+/** A marker named for a screen reader: eight are called "Red beacon", so add the clue. */
+function spoken(marker: Marker): string {
+  return marker.kind === 'beacon' && marker.clue ? `${marker.name} ${marker.clue}` : marker.name;
 }
 
 function gives(marker: Marker): string {
