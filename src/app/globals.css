@@ -750,6 +750,33 @@ button {
   color: rgba(255, 255, 255, 0.75);
 }
 
+/* A Mine path: pink when unsafe, green when safe. */
+.aruco-path-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: rgba(255, 29, 120, 0.06);
+  border: 1px solid rgba(255, 29, 120, 0.22);
+}
+
+.aruco-path-row[data-safe] {
+  background: rgba(0, 232, 122, 0.06);
+  border-color: rgba(0, 232, 122, 0.25);
+}
+
+.aruco-path-verdict {
+  font-weight: 600;
+  color: var(--color-pink);
+}
+
+.aruco-path-row[data-safe] .aruco-path-verdict {
+  color: var(--color-green);
+}
+
 .aruco-picker {
   max-height: 220px;
   overflow-y: auto;

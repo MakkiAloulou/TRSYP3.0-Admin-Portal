@@ -34,7 +34,7 @@ export default async function ArucoPage({ searchParams }: { searchParams: Promis
         <h2 className="admin-heading text-lg text-white">ArUco</h2>
         <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
           {live
-            ? `Live: Game ${live.game} · ${live.gameName}, for ${live.teamCount} team${live.teamCount === 1 ? '' : 's'}`
+            ? `Live: ${live.title}, for ${live.teamCount} team${live.teamCount === 1 ? '' : 's'}`
             : 'No game running: /aruco is closed'}
         </p>
       </div>
@@ -44,7 +44,7 @@ export default async function ArucoPage({ searchParams }: { searchParams: Promis
       ) : (
         <LoadError>
           The games could not be loaded. If the backend hasn&apos;t been deployed since the games were added, its
-          migration (20261018020000_aruco_rounds) hasn&apos;t run yet.
+          migrations (20261018020000_aruco_rounds, 20261018030000_aruco_mine_games) haven&apos;t run yet.
         </LoadError>
       )}
 

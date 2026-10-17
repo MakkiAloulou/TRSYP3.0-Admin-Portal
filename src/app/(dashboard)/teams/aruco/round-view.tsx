@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { MAX_ATTEMPTS, SCAN_LIMIT, formatTime, type RoundDetail, type RoundSummary } from './aruco-types';
+import { MAX_ATTEMPTS, formatTime, type RoundDetail, type RoundSummary } from './aruco-types';
 import { ResetTeamButton } from './games-panel';
 
 /** The rounds played so far, newest first, each a link to its timelines. */
@@ -15,9 +15,7 @@ export function RoundPicker({ rounds, selected }: { rounds: RoundSummary[]; sele
           data-active={round.id === selected ? '' : undefined}
           aria-current={round.id === selected ? 'page' : undefined}
         >
-          <span className="font-medium">
-            Game {round.game} · {round.gameName}
-          </span>
+          <span className="font-medium">{round.title}</span>
           <span className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
             {round.endedAt ? formatTime(round.startedAt, true) : 'Live now'} · {round.teamCount} team
             {round.teamCount === 1 ? '' : 's'}
@@ -28,19 +26,19 @@ export function RoundPicker({ rounds, selected }: { rounds: RoundSummary[]; sele
   );
 }
 
-/** One round, team by team: every scan and word, in order, with who did it. */
+/** One round, team by team: every scan (and, in a Garden game, every word), in order, with who did it. */
 export function RoundView({ round }: { round: RoundDetail }) {
   const live = round.endedAt === null;
   return (
     <section className="admin-card" aria-labelledby="aruco-round-title">
       <div className="p-4 sm:px-5">
         <h3 id="aruco-round-title" className="admin-heading text-sm text-white">
-          Game {round.game} · {round.gameName} {live ? '(live)' : ''}
+          {round.title} {live ? '(live)' : ''}
         </h3>
         <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>
           Started {formatTime(round.startedAt, true)}
-          {round.endedAt && `, ended ${formatTime(round.endedAt, true)}`}. Every scan and word, in order. Times are
-          Tunis time.
+          {round.endedAt && `, ended ${formatTime(round.endedAt, true)}`}. Every scan
+          {round.hasWord ? ' and word' : ''}, in order. Times are Tunis time.
         </p>
       </div>
 
@@ -53,15 +51,17 @@ export function RoundView({ round }: { round: RoundDetail }) {
               </p>
               <div className="mt-1.5 flex flex-wrap gap-1.5">
                 <span className="admin-badge admin-badge--gray">
-                  {team.triesUsed}/{SCAN_LIMIT} IDs tried
+                  {team.triesUsed}/{round.scanLimit} IDs tried
                 </span>
-                <span className={`admin-badge ${team.solved ? 'admin-badge--green' : team.wordAttempts >= MAX_ATTEMPTS ? 'admin-badge--red' : 'admin-badge--gray'}`}>
-                  {team.solved
-                    ? 'Word found'
-                    : team.wordAttempts >= MAX_ATTEMPTS
-                      ? 'Out of word attempts'
-                      : `${team.wordAttempts}/${MAX_ATTEMPTS} word attempts`}
-                </span>
+                {round.hasWord && (
+                  <span className={`admin-badge ${team.solved ? 'admin-badge--green' : team.wordAttempts >= MAX_ATTEMPTS ? 'admin-badge--red' : 'admin-badge--gray'}`}>
+                    {team.solved
+                      ? 'Word found'
+                      : team.wordAttempts >= MAX_ATTEMPTS
+                        ? 'Out of word attempts'
+                        : `${team.wordAttempts}/${MAX_ATTEMPTS} word attempts`}
+                  </span>
+                )}
               </div>
             </div>
             {live && <ResetTeamButton roundId={round.id} teamId={team.teamId} />}

@@ -242,18 +242,21 @@ model CompetitionDrawMatch {
 }
 
 // --- ArUco challenge ---
-// Owned by the backend's migrations (latest: 20261018020000_aruco_rounds) and
-// copied from its schema.prisma; keep the two in step. The portal starts and
-// stops rounds, resets teams and reads the activity log.
-// Three Garden games, each with its own word and its own meaning for every
-// marker ID. The admin portal starts a round of one game for chosen
-// Competition teams; /aruco is open while a round is live.
+// Owned by the backend's migrations (latest: 20261018030000_aruco_mine_games)
+// and copied from its schema.prisma; keep the two in step. The portal starts
+// and stops rounds, resets teams and reads the activity log.
+// Garden games (a word to find from letters and hints) and Mine games (safe
+// and unsafe paths), each with its own meaning for every marker ID. The admin
+// portal starts a round of one game for chosen Competition teams; /aruco is
+// open while a round is live.
 
-/// One ArUco game (1 Human, 2 Machine, 3 Alliance) and the word that wins it.
+/// One ArUco game: 1 Human, 2 Machine, 3 Alliance (Garden); 4 Mine 1, 5 Mine 2.
 model ArucoGame {
-  number Int    @id
-  name   String
-  word   String
+  number    Int     @id
+  name      String
+  field     String  @default("Garden") // Garden | Mine
+  word      String? // the word that wins a Garden game; Mine games have none
+  scanLimit Int?    @map("scan_limit") // tries per team; null: ARUCO_SCAN_LIMIT
 
   markers ArucoMarker[]
   rounds  ArucoRound[]
@@ -266,8 +269,8 @@ model ArucoGame {
 model ArucoMarker {
   game       Int
   markerId   Int    @map("marker_id")
-  kind       String // letter | hint | collector
-  content    String @default("") // the letter, or the hint's text
+  kind       String // letter | hint | collector | path
+  content    String @default("") // the letter, the hint's text, or safe | unsafe for a path
   hintNumber Int?   @map("hint_number") // hints only: 1-4
 
   arucoGame ArucoGame @relation(fields: [game], references: [number], onDelete: Cascade)
@@ -304,7 +307,8 @@ model ArucoRoundTeam {
 }
 
 /// A distinct marker ID a team has tried in a round, and what it showed them
-/// (`kind` null: no marker). Capped per team by ARUCO_SCAN_LIMIT. Deleted
+/// (`kind` null: no marker). Capped per team by the game's scan_limit, else
+/// ARUCO_SCAN_LIMIT. Deleted
 /// when a new round starts, so no team sees an earlier game's log.
 model ArucoScan {
   id         String   @id @default(uuid())
@@ -344,7 +348,7 @@ model ArucoEvent {
   userId    String?  @map("user_id") // null for an admin's reset
   action    String // scan | word | reset
   markerId  Int?     @map("marker_id")
-  // scan: letter | hint | collector | none | limit; word: correct | wrong | locked
+  // scan: letter | hint | collector | path | none | limit; word: correct | wrong | locked
   outcome   String
   content   String   @default("") // scan: what it showed; word: the word typed
   createdAt DateTime @default(now()) @map("created_at")

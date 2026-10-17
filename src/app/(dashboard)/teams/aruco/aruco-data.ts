@@ -1,5 +1,6 @@
 import 'server-only';
 import { prisma } from '@/lib/prisma';
+import { SCAN_LIMIT, gameTitle } from './aruco-types';
 import type {
   CompetitionTeam,
   Game,
@@ -11,19 +12,22 @@ import type {
   TimelineEntry,
 } from './aruco-types';
 
-const KIND_ORDER: Record<MarkerKind, number> = { letter: 0, hint: 1, collector: 2 };
+const KIND_ORDER: Record<MarkerKind, number> = { letter: 0, hint: 1, collector: 2, path: 3 };
 
 function isKind(kind: string): kind is MarkerKind {
-  return kind === 'letter' || kind === 'hint' || kind === 'collector';
+  return kind === 'letter' || kind === 'hint' || kind === 'collector' || kind === 'path';
 }
 
-/** The three games and what each marker gives in them: letters by ID, then hints 1-4, then collectors. */
+/** The games and what each marker gives in them: letters by ID, then hints 1-4, then collectors; paths by ID. */
 export async function getGames(): Promise<Game[]> {
   const games = await prisma.arucoGame.findMany({ orderBy: { number: 'asc' }, include: { markers: true } });
   return games.map((game) => ({
     number: game.number,
     name: game.name,
+    field: game.field === 'Mine' ? 'Mine' : 'Garden',
+    title: gameTitle(game),
     word: game.word,
+    scanLimit: game.scanLimit ?? SCAN_LIMIT,
     markers: game.markers
       .flatMap((m): GameMarker[] =>
         isKind(m.kind) ? [{ markerId: m.markerId, kind: m.kind, content: m.content, hintNumber: m.hintNumber }] : [],
@@ -51,12 +55,14 @@ export async function getCompetitionTeams(): Promise<CompetitionTeam[]> {
 export async function getRounds(): Promise<RoundSummary[]> {
   const rounds = await prisma.arucoRound.findMany({
     orderBy: { startedAt: 'desc' },
-    include: { arucoGame: { select: { name: true } }, _count: { select: { teams: true } } },
+    include: { arucoGame: true, _count: { select: { teams: true } } },
   });
   return rounds.map((r) => ({
     id: r.id,
     game: r.game,
-    gameName: r.arucoGame.name,
+    title: gameTitle(r.arucoGame),
+    scanLimit: r.arucoGame.scanLimit ?? SCAN_LIMIT,
+    hasWord: r.arucoGame.word !== null,
     startedAt: r.startedAt.toISOString(),
     endedAt: r.endedAt?.toISOString() ?? null,
     teamCount: r._count.teams,
@@ -72,7 +78,7 @@ export async function getRoundDetail(roundId: string): Promise<RoundDetail | nul
   const round = await prisma.arucoRound.findUnique({
     where: { id: roundId },
     include: {
-      arucoGame: { select: { name: true } },
+      arucoGame: true,
       teams: true,
       events: { orderBy: { createdAt: 'asc' } },
       _count: { select: { teams: true } },
@@ -124,7 +130,9 @@ export async function getRoundDetail(roundId: string): Promise<RoundDetail | nul
   return {
     id: round.id,
     game: round.game,
-    gameName: round.arucoGame.name,
+    title: gameTitle(round.arucoGame),
+    scanLimit: round.arucoGame.scanLimit ?? SCAN_LIMIT,
+    hasWord: round.arucoGame.word !== null,
     startedAt: round.startedAt.toISOString(),
     endedAt: round.endedAt?.toISOString() ?? null,
     teamCount: round._count.teams,
@@ -154,6 +162,10 @@ function describe(
     }
     case 'collector':
       return { tone: 'good', text: `Scanned ${id}: collector (word box)` };
+    case 'path':
+      return e.content === 'safe'
+        ? { tone: 'good', text: `Scanned ${id}: safe path` }
+        : { tone: 'bad', text: `Scanned ${id}: unsafe path` };
     case 'limit':
       return { tone: 'bad', text: `Tried ${id}: refused, all tries used` };
     default:

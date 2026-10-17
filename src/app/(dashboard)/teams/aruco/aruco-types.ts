@@ -2,15 +2,16 @@
 
 /** Word attempts a team gets per round (the backend's MAX_ATTEMPTS). */
 export const MAX_ATTEMPTS = 3;
-/** Distinct IDs a team may try per round: the backend's default ARUCO_SCAN_LIMIT. */
+/** Distinct IDs a team may try per round when the game sets none: the backend's default ARUCO_SCAN_LIMIT. */
 export const SCAN_LIMIT = 20;
 
-export type MarkerKind = 'letter' | 'hint' | 'collector';
+export type MarkerKind = 'letter' | 'hint' | 'collector' | 'path';
+export type Field = 'Garden' | 'Mine';
 
 export type GameMarker = {
   markerId: number;
   kind: MarkerKind;
-  /** The letter, or the hint's text. */
+  /** The letter, the hint's text, or safe | unsafe for a path. */
   content: string;
   hintNumber: number | null;
 };
@@ -18,7 +19,12 @@ export type GameMarker = {
 export type Game = {
   number: number;
   name: string;
-  word: string;
+  field: Field;
+  /** "Game 1 · Human" for a Garden game, "Mine 1" for a Mine one. */
+  title: string;
+  /** Garden games only. */
+  word: string | null;
+  scanLimit: number;
   markers: GameMarker[];
 };
 
@@ -27,7 +33,10 @@ export type CompetitionTeam = { id: string; name: string; members: number };
 export type RoundSummary = {
   id: string;
   game: number;
-  gameName: string;
+  /** The game's title, as on its card. */
+  title: string;
+  scanLimit: number;
+  hasWord: boolean;
   startedAt: string;
   endedAt: string | null;
   teamCount: number;
@@ -57,6 +66,11 @@ export type RoundTeam = {
 };
 
 export type RoundDetail = RoundSummary & { teams: RoundTeam[] };
+
+/** A game's title: Garden games by number and name, Mine games by name. */
+export function gameTitle(game: { number: number; name: string; field: string }): string {
+  return game.field === 'Mine' ? game.name : `Game ${game.number} · ${game.name}`;
+}
 
 /** Times are shown as the event runs them, in Tunisia. */
 export function formatTime(iso: string, withDate = false): string {

@@ -6,9 +6,9 @@ import { resetTeam, startRound, stopRound } from './actions';
 import type { CompetitionTeam, Game, RoundSummary } from './aruco-types';
 
 /**
- * The three games: what every marker gives in each, and the button that
- * starts one for chosen teams. Only one game is live at a time; starting one
- * ends the other and wipes every team's progress.
+ * The Garden and Mine games: what every marker gives in each, and the button
+ * that starts one for chosen teams. Only one game is live at a time; starting
+ * one ends the other and wipes every team's progress.
  */
 export function GamesPanel({
   games,
@@ -20,18 +20,28 @@ export function GamesPanel({
   live: RoundSummary | null;
 }) {
   const [picking, setPicking] = useState<number | null>(null);
+  const fields = (['Garden', 'Mine'] as const)
+    .map((field) => ({ field, games: games.filter((g) => g.field === field) }))
+    .filter((f) => f.games.length > 0);
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-      {games.map((game) => (
-        <GameCard
-          key={game.number}
-          game={game}
-          teams={teams}
-          live={live}
-          picking={picking === game.number}
-          onPick={(open) => setPicking(open ? game.number : null)}
-        />
+    <div className="space-y-5">
+      {fields.map(({ field, games: fieldGames }) => (
+        <section key={field} className="space-y-3" aria-label={`${field} games`}>
+          <h3 className="aruco-label">{field} games</h3>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+            {fieldGames.map((game) => (
+              <GameCard
+                key={game.number}
+                game={game}
+                teams={teams}
+                live={live}
+                picking={picking === game.number}
+                onPick={(open) => setPicking(open ? game.number : null)}
+              />
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   );
@@ -54,49 +64,77 @@ function GameCard({
   const letters = game.markers.filter((m) => m.kind === 'letter').sort((a, b) => a.markerId - b.markerId);
   const hints = game.markers.filter((m) => m.kind === 'hint');
   const collectors = game.markers.filter((m) => m.kind === 'collector');
+  const paths = game.markers.filter((m) => m.kind === 'path').sort((a, b) => a.markerId - b.markerId);
 
   return (
     <section className="admin-card flex flex-col gap-4 p-5" data-live={isLive ? '' : undefined} aria-labelledby={`aruco-game-${game.number}`}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 id={`aruco-game-${game.number}`} className="admin-heading text-sm text-white">
-            Game {game.number} · {game.name}
+            {game.title}
           </h3>
           <p className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
-            Word: <span className="aruco-word">{game.word}</span>
+            {game.word ? (
+              <>
+                Word: <span className="aruco-word">{game.word}</span>
+              </>
+            ) : (
+              'No word to find'
+            )}{' '}
+            · {game.scanLimit} tries per team
           </p>
         </div>
         {isLive && <span className="admin-badge admin-badge--green">Live</span>}
       </div>
 
-      <div>
-        <p className="aruco-label">Red beacons</p>
-        <ul className="aruco-letters">
-          {letters.map((m) => (
-            <li key={m.markerId} className="aruco-letter-chip">
-              <span className="aruco-letter-id">{m.markerId}</span>
-              <span className="aruco-letter-char">{m.content}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
+      {letters.length > 0 && (
+        <div>
+          <p className="aruco-label">Red beacons</p>
+          <ul className="aruco-letters">
+            {letters.map((m) => (
+              <li key={m.markerId} className="aruco-letter-chip">
+                <span className="aruco-letter-id">{m.markerId}</span>
+                <span className="aruco-letter-char">{m.content}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-      <div>
-        <p className="aruco-label">Blue beacons</p>
-        <ol className="space-y-1.5">
-          {hints.map((m) => (
-            <li key={m.markerId} className="aruco-hint">
-              <span className="aruco-hint-num">{m.hintNumber}</span>
-              <span className="aruco-hint-id">#{m.markerId}</span>
-              <span className="aruco-hint-text">{m.content}</span>
-            </li>
-          ))}
-        </ol>
-      </div>
+      {hints.length > 0 && (
+        <div>
+          <p className="aruco-label">Blue beacons</p>
+          <ol className="space-y-1.5">
+            {hints.map((m) => (
+              <li key={m.markerId} className="aruco-hint">
+                <span className="aruco-hint-num">{m.hintNumber}</span>
+                <span className="aruco-hint-id">#{m.markerId}</span>
+                <span className="aruco-hint-text">{m.content}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
 
-      <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
-        Word box: {collectors.map((m) => `#${m.markerId}`).join(' and ')}
-      </p>
+      {paths.length > 0 && (
+        <div>
+          <p className="aruco-label">Paths</p>
+          <ul className="space-y-1.5">
+            {paths.map((m) => (
+              <li key={m.markerId} className="aruco-path-row" data-safe={m.content === 'safe' ? '' : undefined}>
+                <span className="aruco-hint-id">#{m.markerId}</span>
+                <span className="aruco-path-verdict">{m.content === 'safe' ? 'Safe path' : 'Unsafe path'}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {collectors.length > 0 && (
+        <p className="text-xs" style={{ color: 'rgba(255,255,255,0.45)' }}>
+          Word box: {collectors.map((m) => `#${m.markerId}`).join(' and ')}
+        </p>
+      )}
 
       <div className="mt-auto">
         {isLive ? (
@@ -180,7 +218,7 @@ function TeamPicker({
       </ul>
 
       <p className="pay-banner text-xs">
-        {live ? `This ends Game ${live.game} · ${live.gameName}. ` : ''}Every team’s tries, field log and word
+        {live ? `This ends ${live.title}. ` : ''}Every team’s tries, field log and word
         attempts are deleted. The activity log stays here.
       </p>
       {error && <p className="pay-error">{error}</p>}
