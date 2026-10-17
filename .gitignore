@@ -45,3 +45,6 @@ next-env.d.ts
 
 # badge avatars from scripts/export-avatars.mjs
 /avatars
+
+# oh-my-claudecode plugin state (local only)
+.omc/
