@@ -609,7 +609,7 @@ button {
 }
 
 /* ─── Team activity tabs ───────────────────────────────
-   Competition / Challenge / Hackathon above every Teams page, in the same
+   Competition / Challenge / Hackathon / ArUco above every Teams page, in the same
    language as the navbar: quiet labels, a lit line under the current one. */
 
 .subtabs {
@@ -656,13 +656,148 @@ button {
   }
 }
 
-/* Phones: three equal tabs across the width. */
+/* Phones: four equal tabs across the width, a size down so they fit at 375px. */
 @media (max-width: 767px) {
   .subtab {
     flex: 1;
     text-align: center;
-    padding-right: 6px;
-    padding-left: 6px;
+    padding-right: 4px;
+    padding-left: 4px;
+    font-size: 13px;
+  }
+}
+
+/* ─── ArUco register ──────────────────────────────────── */
+/* One grid row per marker: ID, game, kind, name, what it gives, remove. On
+   phones each row becomes a small card: ID / game / kind across, then name
+   and what it gives full width. */
+
+.aruco-row {
+  display: grid;
+  grid-template-columns: 76px 112px 132px minmax(0, 1fr) minmax(0, 1.5fr) 36px;
+  gap: 8px;
+  align-items: start;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.aruco-row--head {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.4);
+  border-bottom-color: rgba(0, 232, 122, 0.12);
+}
+
+.aruco-row[data-problem] {
+  background: rgba(255, 29, 120, 0.04);
+}
+
+.aruco-field {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.aruco-field--id {
+  font-variant-numeric: tabular-nums;
+}
+
+.aruco-gives {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.aruco-gives .aruco-field--qty {
+  flex: 0 0 64px;
+}
+
+.aruco-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+
+.aruco-remove:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .aruco-remove:hover {
+    color: var(--color-pink);
+    background: rgba(255, 29, 120, 0.08);
+  }
+}
+
+.aruco-problem {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--color-pink);
+}
+
+.aruco-label {
+  display: none;
+}
+
+.aruco-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  white-space: nowrap;
+}
+
+.aruco-chip--miss {
+  color: rgba(255, 255, 255, 0.45);
+  border-style: dashed;
+}
+
+.aruco-chip-id {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+@media (max-width: 767px) {
+  .aruco-row {
+    grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 34px;
+  }
+
+  .aruco-row--head {
+    display: none;
+  }
+
+  .aruco-cell--name,
+  .aruco-cell--gives {
+    grid-column: 1 / -1;
+  }
+
+  /* The remove button holds the first line's end; name and gives wrap under. */
+  .aruco-cell--remove {
+    grid-column: 4;
+    grid-row: 1;
+  }
+
+  .aruco-label {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
   }
 }
 

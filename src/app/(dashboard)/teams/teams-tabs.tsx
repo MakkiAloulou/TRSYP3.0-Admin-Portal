@@ -7,9 +7,11 @@ const ACTIVITIES = [
   { href: '/teams/competition', label: 'Competition' },
   { href: '/teams/challenge', label: 'Challenge' },
   { href: '/teams/hackathon', label: 'Hackathon' },
+  // Played by Competition teams: its marker register and their progress.
+  { href: '/teams/aruco', label: 'ArUco' },
 ] as const;
 
-/** The three activities as tabs, shown above every Teams page. */
+/** The three activities, and the ArUco game, as tabs above every Teams page. */
 export function TeamsTabs() {
   const pathname = usePathname();
 

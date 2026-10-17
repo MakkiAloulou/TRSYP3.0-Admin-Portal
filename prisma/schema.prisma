@@ -241,6 +241,54 @@ model CompetitionDrawMatch {
   @@map("competition_draw_matches")
 }
 
+// --- ArUco challenge ---
+// Owned by the backend's migrations (20261011000000_aruco_collector_progress,
+// 20261012000000_aruco_scans, 20261017000000_aruco_markers); the portal edits
+// the register and can wipe a team's progress.
+
+/// What scanning one ArUco ID (DICT_4X4_50, 0-49) gives on the main site's
+/// /aruco page. An ID with no row isn't a marker. CHECK constraints keep
+/// `quantity` to beacons and `collector` (1 or 2) to collectors.
+model ArucoMarker {
+  markerId  Int      @id @map("marker_id")
+  kind      String // beacon | indicator | collector
+  game      String // Garden | Mine
+  name      String
+  clue      String   @default("")
+  quantity  Int?
+  collector Int?
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("aruco_markers")
+}
+
+/// A distinct marker ID a Competition team has tried, real or not.
+model ArucoScan {
+  id        String   @id @default(uuid())
+  teamId    String   @map("team_id")
+  markerId  Int      @map("marker_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([teamId, markerId])
+  @@map("aruco_scans")
+}
+
+/// A Competition team's attempts on one collector (1 or 2). The words typed
+/// are not stored, only how many attempts were used and whether one was right.
+model ArucoCollectorProgress {
+  id        String    @id @default(uuid())
+  teamId    String    @map("team_id")
+  collector Int
+  solved    Boolean   @default(false)
+  attempts  Int       @default(0)
+  solvedAt  DateTime? @map("solved_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@unique([teamId, collector])
+  @@map("aruco_collector_progress")
+}
+
 // Enums
 
 enum IeeeCheckStatus {
