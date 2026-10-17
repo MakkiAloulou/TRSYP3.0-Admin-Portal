@@ -1,93 +1,70 @@
-/**
- * The ArUco register as the re-ranking editor and its save action both see
- * it. Shared so the editor can flag a bad ID before saving and the action can
- * refuse the same thing from a forged POST.
- */
+/** The ArUco games and rounds as the admin page shows them. */
 
-export const MARKER_KINDS = ['beacon', 'indicator', 'collector'] as const;
-export const MARKER_GAMES = ['Garden', 'Mine'] as const;
-/** DICT_4X4_50 has IDs 0 to 49. */
-export const MAX_MARKER_ID = 49;
+/** Word attempts a team gets per round (the backend's MAX_ATTEMPTS). */
+export const MAX_ATTEMPTS = 3;
+/** Distinct IDs a team may try per round: the backend's default ARUCO_SCAN_LIMIT. */
+export const SCAN_LIMIT = 20;
 
-export type MarkerKind = (typeof MARKER_KINDS)[number];
-export type MarkerGame = (typeof MARKER_GAMES)[number];
+export type MarkerKind = 'letter' | 'hint' | 'collector';
 
-export const KIND_LABELS: Record<MarkerKind, string> = {
-  beacon: 'Red beacon',
-  indicator: 'Indicator',
-  collector: 'Collector',
-};
-
-/** One aruco_markers row. `quantity` is beacons only, `collector` collectors only. */
-export type Marker = {
+export type GameMarker = {
   markerId: number;
   kind: MarkerKind;
-  game: MarkerGame;
-  name: string;
-  clue: string;
-  quantity: number | null;
-  collector: number | null;
+  /** The letter, or the hint's text. */
+  content: string;
+  hintNumber: number | null;
 };
 
-/** A marker moving from the ID it has now to another one. */
-export type Move = { from: number; to: number };
-
-export function isValidId(id: number): boolean {
-  return Number.isInteger(id) && id >= 0 && id <= MAX_MARKER_ID;
-}
-
-/**
- * What is wrong with each new ID, by row index: out of range, or taken by
- * another row. Every row is checked, moved or not, since a move can land on
- * an ID a row that stayed put still holds.
- */
-export function idProblems(ids: number[]): Map<number, string> {
-  const problems = new Map<number, string>();
-  const rowsById = new Map<number, number[]>();
-  ids.forEach((id, i) => {
-    if (!isValidId(id)) problems.set(i, `ID must be a whole number from 0 to ${MAX_MARKER_ID}.`);
-    else rowsById.set(id, [...(rowsById.get(id) ?? []), i]);
-  });
-  for (const [id, rows] of rowsById) {
-    if (rows.length < 2) continue;
-    for (const i of rows) problems.set(i, `ID ${id} is given to ${rows.length} markers.`);
-  }
-  return problems;
-}
-
-/**
- * Reads one aruco_markers row as a Marker, or null when it isn't shaped like
- * one. The table's CHECK constraints keep rows well formed; this narrows types.
- */
-export function parseMarker(raw: {
-  markerId: number;
-  kind: string;
-  game: string;
+export type Game = {
+  number: number;
   name: string;
-  clue: string;
-  quantity: number | null;
-  collector: number | null;
-}): Marker | null {
-  const kind = MARKER_KINDS.find((k) => k === raw.kind);
-  const game = MARKER_GAMES.find((g) => g === raw.game);
-  if (!kind || !game) return null;
-  return {
-    markerId: raw.markerId,
-    kind,
-    game,
-    name: raw.name,
-    clue: raw.clue,
-    quantity: raw.quantity,
-    collector: raw.collector,
-  };
-}
+  word: string;
+  markers: GameMarker[];
+};
 
-/** A Competition team's ArUco progress, for the progress table. */
-export type TeamProgress = {
+export type CompetitionTeam = { id: string; name: string; members: number };
+
+export type RoundSummary = {
+  id: string;
+  game: number;
+  gameName: string;
+  startedAt: string;
+  endedAt: string | null;
+  teamCount: number;
+};
+
+/** One line of a team's timeline, already worded. */
+export type TimelineEntry = {
+  id: string;
+  at: string;
+  /** Who did it: a member's name, or null for an organizer's reset. */
+  who: string | null;
+  action: 'scan' | 'word' | 'reset';
+  /** Good (a real marker, a right word), bad (no marker, wrong word) or neutral. */
+  tone: 'good' | 'bad' | 'neutral';
+  text: string;
+};
+
+export type RoundTeam = {
   teamId: string;
   /** Null when the team has since been deleted. */
   teamName: string | null;
-  /** Marker IDs the team tried, oldest first. */
-  scans: { markerId: number; at: string }[];
-  collectors: { collector: number; attempts: number; solved: boolean; solvedAt: string | null }[];
+  /** Distinct marker IDs tried since the team's last reset. */
+  triesUsed: number;
+  wordAttempts: number;
+  solved: boolean;
+  timeline: TimelineEntry[];
 };
+
+export type RoundDetail = RoundSummary & { teams: RoundTeam[] };
+
+/** Times are shown as the event runs them, in Tunisia. */
+export function formatTime(iso: string, withDate = false): string {
+  return new Date(iso).toLocaleString('en-GB', {
+    timeZone: 'Africa/Tunis',
+    ...(withDate ? { day: '2-digit', month: 'short' } : {}),
+    hour: '2-digit',
+    minute: '2-digit',
+    second: withDate ? undefined : '2-digit',
+  });
+}

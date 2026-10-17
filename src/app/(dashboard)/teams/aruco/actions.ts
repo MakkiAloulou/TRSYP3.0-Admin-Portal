@@ -1,104 +1,100 @@
 'use server';
 
+import { randomUUID } from 'crypto';
 import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { getAdminId } from '@/lib/require-admin';
-import { getRegister } from './aruco-data';
-import { idProblems, type Marker, type Move } from './aruco-types';
 
-export type SaveRegisterResult =
-  | { ok: true; markers: Marker[]; version: string }
-  /** `stale`: another admin saved since this editor loaded; reload before saving. */
-  | { ok: false; stale: boolean; message: string };
+export type ArucoActionResult = { ok: true; roundId?: string } | { ok: false; message: string };
+
+const NOT_ADMIN = { ok: false, message: 'Only admins can run the ArUco games.' } as const;
 
 /**
- * Re-ranks the register: shuffles actions among the IDs in use, nothing else. What each
- * marker does is read back from the table here, never taken from the client,
- * so a save can't change a clue. The whole register is rewritten in one
- * transaction, so swapping two IDs is one save: no moment where both rows
- * want the same primary key. The main site reads the table on every scan.
+ * Starts a round of one game for the chosen Competition teams, and makes it
+ * the live one on /aruco. Ends whatever round was live and deletes every
+ * team's tries, field log and word attempts first, so no team ever sees an
+ * earlier game's markers. The activity log is kept for the admin page.
  */
-export async function reassignIds(raw: unknown, version: string): Promise<SaveRegisterResult> {
+export async function startRound(game: unknown, teamIds: unknown): Promise<ArucoActionResult> {
   // Server actions are reachable by POST from anywhere; the dashboard layout's
   // admin check does not cover them.
-  if (!(await getAdminId())) return { ok: false, stale: false, message: 'Only admins can re-rank the ArUco register.' };
+  const adminId = await getAdminId();
+  if (!adminId) return NOT_ADMIN;
 
-  if (!Array.isArray(raw) || !raw.every(isMove)) return { ok: false, stale: false, message: 'Nothing to save.' };
-  const moves = new Map((raw as Move[]).map((m) => [m.from, m.to]));
-  if (moves.size !== raw.length) return { ok: false, stale: false, message: 'A marker was moved twice.' };
-  // The IDs are fixed: a save only shuffles actions between the IDs it moves
-  // them off, so every ID moved to must be one moved from.
-  const freed = new Set(moves.keys());
-  if (![...moves.values()].every((to) => freed.has(to))) {
-    return { ok: false, stale: false, message: 'Actions can only move between the IDs already in use.' };
+  if (!Number.isInteger(game)) return { ok: false, message: 'Unknown game.' };
+  if (!Array.isArray(teamIds) || !teamIds.every((id) => typeof id === 'string')) {
+    return { ok: false, message: 'Choose the teams that play.' };
   }
+  const chosen = [...new Set(teamIds as string[])];
+  if (chosen.length === 0) return { ok: false, message: 'Choose at least one team.' };
 
   try {
-    type Outcome = { stale: true } | { problem: string } | { saved: Awaited<ReturnType<typeof getRegister>> };
-    const outcome = await prisma.$transaction(async (tx): Promise<Outcome> => {
-      const current = await getRegister(tx);
-      // A marker that no longer has the ID it was moved from: the register changed.
-      if (
-        current.version !== version ||
-        [...moves.keys()].some((from) => !current.markers.some((m) => m.markerId === from))
-      ) {
-        return { stale: true };
-      }
-      const next = current.markers.map((m) => ({ ...m, markerId: moves.get(m.markerId) ?? m.markerId }));
-      const problems = idProblems(next.map((m) => m.markerId));
-      if (problems.size > 0) {
-        const [index, problem] = [...problems][0];
-        return { problem: `${next[index].name}: ${problem}` };
-      }
+    const [found, teams] = await Promise.all([
+      prisma.arucoGame.findUnique({ where: { number: game as number }, select: { number: true } }),
+      prisma.team.count({ where: { id: { in: chosen }, activity: 'COMPETITION' } }),
+    ]);
+    if (!found) return { ok: false, message: 'Unknown game.' };
+    if (teams !== chosen.length) return { ok: false, message: 'A chosen team is not a Competition team any more. Reload the page.' };
 
-      await tx.arucoMarker.deleteMany({});
-      await tx.arucoMarker.createMany({ data: next });
-      return { saved: await getRegister(tx) };
-    });
-
-    if ('stale' in outcome) {
-      return {
-        ok: false,
-        stale: true,
-        message: 'Someone else saved the register since you opened it. Reload to see their changes, then redo yours.',
-      };
-    }
-    if ('problem' in outcome) return { ok: false, stale: false, message: outcome.problem };
+    const roundId = randomUUID();
+    await prisma.$transaction([
+      prisma.arucoRound.updateMany({ where: { endedAt: null }, data: { endedAt: new Date() } }),
+      prisma.arucoScan.deleteMany({}),
+      prisma.arucoWordProgress.deleteMany({}),
+      prisma.arucoRound.create({ data: { id: roundId, game: game as number, startedBy: adminId } }),
+      prisma.arucoRoundTeam.createMany({ data: chosen.map((teamId) => ({ roundId, teamId })) }),
+    ]);
 
     revalidatePath('/teams/aruco');
-    return { ok: true, ...outcome.saved };
+    return { ok: true, roundId };
   } catch (error) {
-    console.error('Could not save the ArUco register', error);
-    return { ok: false, stale: false, message: 'The register could not be saved. Try again.' };
+    console.error('Could not start the ArUco round', error);
+    return { ok: false, message: 'The game could not be started. Try again.' };
   }
 }
 
-function isMove(value: unknown): value is Move {
-  if (!value || typeof value !== 'object') return false;
-  const { from, to } = value as Record<string, unknown>;
-  return Number.isInteger(from) && Number.isInteger(to);
-}
-
-export type ResetProgressResult = { ok: true } | { ok: false; message: string };
-
 /**
- * Wipes ArUco progress: the marker IDs tried and the collector attempts, for
- * one team or (`teamId` null) every team. Cannot be undone; the UI confirms.
+ * Ends the live round: /aruco closes, and every team's tries, field log and
+ * word attempts are deleted. The activity log is kept.
  */
-export async function resetProgress(teamId: string | null): Promise<ResetProgressResult> {
-  if (!(await getAdminId())) return { ok: false, message: 'Only admins can reset ArUco progress.' };
-  if (teamId !== null && typeof teamId !== 'string') return { ok: false, message: 'Unknown team.' };
-
-  const where = teamId === null ? {} : { teamId };
+export async function stopRound(): Promise<ArucoActionResult> {
+  if (!(await getAdminId())) return NOT_ADMIN;
   try {
     await prisma.$transaction([
-      prisma.arucoScan.deleteMany({ where }),
-      prisma.arucoCollectorProgress.deleteMany({ where }),
+      prisma.arucoRound.updateMany({ where: { endedAt: null }, data: { endedAt: new Date() } }),
+      prisma.arucoScan.deleteMany({}),
+      prisma.arucoWordProgress.deleteMany({}),
     ]);
     revalidatePath('/teams/aruco');
     return { ok: true };
   } catch (error) {
-    console.error('Could not reset ArUco progress', error);
-    return { ok: false, message: 'Progress could not be reset. Try again.' };
+    console.error('Could not stop the ArUco round', error);
+    return { ok: false, message: 'The game could not be stopped. Try again.' };
+  }
+}
+
+/**
+ * Gives one team of the live round a fresh start: its tries, field log and
+ * word attempts are deleted, and the reset is written to its timeline.
+ */
+export async function resetTeam(roundId: unknown, teamId: unknown): Promise<ArucoActionResult> {
+  if (!(await getAdminId())) return NOT_ADMIN;
+  if (typeof roundId !== 'string' || typeof teamId !== 'string') return { ok: false, message: 'Unknown team.' };
+
+  try {
+    const round = await prisma.arucoRound.findUnique({ where: { id: roundId }, select: { endedAt: true } });
+    if (!round || round.endedAt) return { ok: false, message: 'Only a team in the live game can be reset.' };
+
+    const where = { roundId, teamId };
+    await prisma.$transaction([
+      prisma.arucoScan.deleteMany({ where }),
+      prisma.arucoWordProgress.deleteMany({ where }),
+      prisma.arucoEvent.create({ data: { roundId, teamId, action: 'reset', outcome: 'reset' } }),
+    ]);
+    revalidatePath('/teams/aruco');
+    return { ok: true };
+  } catch (error) {
+    console.error('Could not reset the ArUco team', error);
+    return { ok: false, message: 'The team could not be reset. Try again.' };
   }
 }

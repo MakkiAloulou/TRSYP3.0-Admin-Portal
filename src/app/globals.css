@@ -667,179 +667,220 @@ button {
   }
 }
 
-/* ─── ArUco register ──────────────────────────────────── */
-/* Two columns: the fixed IDs (the printed markers) and the action cards that
-   are dragged into a new order beside them. Cards are one line tall so every
-   slot is the same height and a drag never reflows the list. */
+/* ─── ArUco games ─────────────────────────────────────── */
+/* Three game cards (what every marker gives, and Start), the rounds played,
+   and each team's timeline: every scan and word, in order. */
 
-.aruco-list {
-  padding: 0 16px 4px;
+.admin-card[data-live] {
+  border-color: rgba(0, 232, 122, 0.45);
+  box-shadow: 0 0 0 1px rgba(0, 232, 122, 0.15), 0 0 40px rgba(0, 232, 122, 0.06);
 }
 
-.aruco-row {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  padding: 4px 0;
-}
-
-.aruco-slot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 52px;
-  border-radius: 10px;
-  font-family: var(--font-heading);
-  font-size: 15px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-green);
-  background: rgba(0, 232, 122, 0.06);
-  border: 1px solid rgba(0, 232, 122, 0.18);
-}
-
-.aruco-card {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 52px;
-  padding: 0 12px 0 4px;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  cursor: grab;
-  user-select: none;
-  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
-}
-
-.aruco-card[data-moved] {
-  border-color: rgba(0, 232, 122, 0.3);
-}
-
-/* The card in hand: above the others, and no transition so it tracks the
-   pointer exactly. */
-.aruco-card[data-lifted] {
-  z-index: 2;
-  cursor: grabbing;
-  background: #0b1424;
-  border-color: rgba(0, 232, 122, 0.5);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(0, 232, 122, 0.2);
-  transition: none;
-}
-
-.aruco-list[data-dragging] {
-  cursor: grabbing;
-}
-
-.aruco-grip {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 32px;
-  height: 40px;
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.35);
-  /* A finger on the grip drags; anywhere else on the card still scrolls. */
-  touch-action: none;
-  cursor: inherit;
-}
-
-.aruco-grip:focus-visible {
-  outline: 2px solid var(--color-green);
-  outline-offset: -2px;
-}
-
-.aruco-action {
-  flex: 1;
-  min-width: 0;
-}
-
-.aruco-action-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  white-space: nowrap;
-}
-
-.aruco-action-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-size: 14px;
-  font-weight: 500;
-  color: #ffffff;
-}
-
-.aruco-action-kind {
-  font-size: 12px;
+.aruco-label {
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.4);
 }
 
-.aruco-action-gives {
-  margin-top: 2px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.55);
+.aruco-word {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--color-green);
 }
 
-.aruco-was {
-  flex-shrink: 0;
+.aruco-letters {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.aruco-letter-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(255, 29, 120, 0.06);
+  border: 1px solid rgba(255, 29, 120, 0.2);
+}
+
+.aruco-letter-id {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.aruco-letter-char {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--color-pink);
+}
+
+.aruco-hint {
+  display: grid;
+  grid-template-columns: 20px 34px minmax(0, 1fr);
+  gap: 6px;
+  align-items: baseline;
+  font-size: 12px;
+}
+
+.aruco-hint-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  color: #4d9fff;
+  border: 1px solid rgba(77, 159, 255, 0.45);
+}
+
+.aruco-hint-id {
+  font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.45);
+}
+
+.aruco-hint-text {
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.aruco-picker {
+  max-height: 220px;
+  overflow-y: auto;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.aruco-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.aruco-picker li + li .aruco-pick {
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.aruco-pick input {
+  accent-color: var(--color-green);
+  width: 16px;
+  height: 16px;
+}
+
+.aruco-rounds {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.aruco-round {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  transition: border-color 150ms ease;
+}
+
+.aruco-round[data-active] {
+  border-color: rgba(0, 232, 122, 0.45);
+  background: rgba(0, 232, 122, 0.05);
+}
+
+.aruco-round:focus-visible {
+  outline: 2px solid var(--color-green);
+  outline-offset: 2px;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .aruco-card:not([data-lifted]):hover {
-    border-color: rgba(255, 255, 255, 0.18);
-  }
-
-  .aruco-list[data-dragging] .aruco-card:not([data-lifted]):hover {
-    border-color: rgba(255, 255, 255, 0.08);
+  .aruco-round:not([data-active]):hover {
+    border-color: rgba(255, 255, 255, 0.2);
   }
 }
 
-@media (max-width: 767px) {
-  .aruco-list {
-    padding-right: 12px;
-    padding-left: 12px;
-  }
-
-  .aruco-row {
-    grid-template-columns: 46px minmax(0, 1fr);
-    gap: 8px;
-  }
-
-  .aruco-action-kind {
-    display: none;
-  }
+.aruco-team {
+  padding: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.aruco-chip {
-  display: inline-flex;
+.aruco-timeline {
+  margin-top: 12px;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.aruco-event {
+  position: relative;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: baseline;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 4px 0 4px 14px;
+  font-size: 13px;
+}
+
+/* A dot on the line, coloured by how it went. */
+.aruco-event::before {
+  content: '';
+  position: absolute;
+  top: 11px;
+  left: -4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.aruco-event[data-tone='good']::before {
+  background: var(--color-green);
+}
+
+.aruco-event[data-tone='bad']::before {
+  background: var(--color-pink);
+}
+
+.aruco-event[data-action='word'] .aruco-event-text {
+  font-weight: 600;
+}
+
+.aruco-event-time {
   font-size: 12px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.aruco-event-text {
+  color: rgba(255, 255, 255, 0.85);
+  overflow-wrap: anywhere;
+}
+
+.aruco-event-who {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.45);
   white-space: nowrap;
 }
 
-.aruco-chip--miss {
-  color: rgba(255, 255, 255, 0.45);
-  border-style: dashed;
-}
+@media (max-width: 767px) {
+  .aruco-event {
+    grid-template-columns: 60px minmax(0, 1fr);
+  }
 
-.aruco-chip-id {
-  font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.5);
+  .aruco-event-who {
+    grid-column: 2;
+  }
 }
 
 /* ─── Dashboard charts ────────────────────────────────── */

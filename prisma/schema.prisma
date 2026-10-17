@@ -242,51 +242,117 @@ model CompetitionDrawMatch {
 }
 
 // --- ArUco challenge ---
-// Owned by the backend's migrations (20261011000000_aruco_collector_progress,
-// 20261012000000_aruco_scans, 20261017000000_aruco_markers); the portal edits
-// the register and can wipe a team's progress.
+// Owned by the backend's migrations (latest: 20261018020000_aruco_rounds) and
+// copied from its schema.prisma; keep the two in step. The portal starts and
+// stops rounds, resets teams and reads the activity log.
+// Three Garden games, each with its own word and its own meaning for every
+// marker ID. The admin portal starts a round of one game for chosen
+// Competition teams; /aruco is open while a round is live.
 
-/// What scanning one ArUco ID (DICT_4X4_50, 0-49) gives on the main site's
-/// /aruco page. An ID with no row isn't a marker. CHECK constraints keep
-/// `quantity` to beacons and `collector` (1 or 2) to collectors.
+/// One ArUco game (1 Human, 2 Machine, 3 Alliance) and the word that wins it.
+model ArucoGame {
+  number Int    @id
+  name   String
+  word   String
+
+  markers ArucoMarker[]
+  rounds  ArucoRound[]
+
+  @@map("aruco_games")
+}
+
+/// What scanning one ID (DICT_4X4_50, 0-49) gives in one game. An ID with no
+/// row isn't a marker in that game.
 model ArucoMarker {
-  markerId  Int      @id @map("marker_id")
-  kind      String // beacon | indicator | collector
-  game      String // Garden | Mine
-  name      String
-  clue      String   @default("")
-  quantity  Int?
-  collector Int?
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  game       Int
+  markerId   Int    @map("marker_id")
+  kind       String // letter | hint | collector
+  content    String @default("") // the letter, or the hint's text
+  hintNumber Int?   @map("hint_number") // hints only: 1-4
 
+  arucoGame ArucoGame @relation(fields: [game], references: [number], onDelete: Cascade)
+
+  @@id([game, markerId])
   @@map("aruco_markers")
 }
 
-/// A distinct marker ID a Competition team has tried, real or not.
-model ArucoScan {
-  id        String   @id @default(uuid())
-  teamId    String   @map("team_id")
-  markerId  Int      @map("marker_id")
-  createdAt DateTime @default(now()) @map("created_at")
+/// A round of one game. At most one is live (ended_at null), enforced by a
+/// partial unique index in the migration.
+model ArucoRound {
+  id        String    @id @default(uuid())
+  game      Int
+  startedAt DateTime  @default(now()) @map("started_at")
+  startedBy String    @map("started_by") // admins.id
+  endedAt   DateTime? @map("ended_at")
 
-  @@unique([teamId, markerId])
+  arucoGame ArucoGame        @relation(fields: [game], references: [number])
+  teams     ArucoRoundTeam[]
+  events    ArucoEvent[]
+
+  @@map("aruco_rounds")
+}
+
+/// A Competition team allowed to play a round.
+model ArucoRoundTeam {
+  roundId String @map("round_id")
+  teamId  String @map("team_id")
+
+  round ArucoRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@id([roundId, teamId])
+  @@map("aruco_round_teams")
+}
+
+/// A distinct marker ID a team has tried in a round, and what it showed them
+/// (`kind` null: no marker). Capped per team by ARUCO_SCAN_LIMIT. Deleted
+/// when a new round starts, so no team sees an earlier game's log.
+model ArucoScan {
+  id         String   @id @default(uuid())
+  roundId    String   @map("round_id")
+  teamId     String   @map("team_id")
+  markerId   Int      @map("marker_id")
+  kind       String?
+  content    String   @default("")
+  hintNumber Int?     @map("hint_number")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@unique([roundId, teamId, markerId])
   @@map("aruco_scans")
 }
 
-/// A Competition team's attempts on one collector (1 or 2). The words typed
-/// are not stored, only how many attempts were used and whether one was right.
-model ArucoCollectorProgress {
+/// A team's word attempts in a round. Deleted when a new round starts.
+model ArucoWordProgress {
   id        String    @id @default(uuid())
+  roundId   String    @map("round_id")
   teamId    String    @map("team_id")
-  collector Int
   solved    Boolean   @default(false)
   attempts  Int       @default(0)
   solvedAt  DateTime? @map("solved_at")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
 
-  @@unique([teamId, collector])
-  @@map("aruco_collector_progress")
+  @@unique([roundId, teamId])
+  @@map("aruco_word_progress")
+}
+
+/// Everything a team did in a round, in order, for the admin portal only:
+/// every scan (repeats included) and every word typed. Kept after the round.
+model ArucoEvent {
+  id        String   @id @default(uuid())
+  roundId   String   @map("round_id")
+  teamId    String   @map("team_id")
+  userId    String?  @map("user_id") // null for an admin's reset
+  action    String // scan | word | reset
+  markerId  Int?     @map("marker_id")
+  // scan: letter | hint | collector | none | limit; word: correct | wrong | locked
+  outcome   String
+  content   String   @default("") // scan: what it showed; word: the word typed
+  createdAt DateTime @default(now()) @map("created_at")
+
+  round ArucoRound @relation(fields: [roundId], references: [id], onDelete: Cascade)
+
+  @@index([roundId, createdAt])
+  @@map("aruco_events")
 }
 
 // Enums

@@ -1,52 +1,162 @@
 import 'server-only';
-import type { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { parseMarker, type Marker, type TeamProgress } from './aruco-types';
+import type {
+  CompetitionTeam,
+  Game,
+  GameMarker,
+  MarkerKind,
+  RoundDetail,
+  RoundSummary,
+  RoundTeam,
+  TimelineEntry,
+} from './aruco-types';
+
+const KIND_ORDER: Record<MarkerKind, number> = { letter: 0, hint: 1, collector: 2 };
+
+function isKind(kind: string): kind is MarkerKind {
+  return kind === 'letter' || kind === 'hint' || kind === 'collector';
+}
+
+/** The three games and what each marker gives in them: letters by ID, then hints 1-4, then collectors. */
+export async function getGames(): Promise<Game[]> {
+  const games = await prisma.arucoGame.findMany({ orderBy: { number: 'asc' }, include: { markers: true } });
+  return games.map((game) => ({
+    number: game.number,
+    name: game.name,
+    word: game.word,
+    markers: game.markers
+      .flatMap((m): GameMarker[] =>
+        isKind(m.kind) ? [{ markerId: m.markerId, kind: m.kind, content: m.content, hintNumber: m.hintNumber }] : [],
+      )
+      .sort(
+        (a, b) =>
+          KIND_ORDER[a.kind] - KIND_ORDER[b.kind] ||
+          (a.hintNumber ?? 0) - (b.hintNumber ?? 0) ||
+          a.markerId - b.markerId,
+      ),
+  }));
+}
+
+/** Every Competition team, to choose who plays a round. */
+export async function getCompetitionTeams(): Promise<CompetitionTeam[]> {
+  const teams = await prisma.team.findMany({
+    where: { activity: 'COMPETITION' },
+    select: { id: true, name: true, _count: { select: { memberships: true } } },
+    orderBy: { name: 'asc' },
+  });
+  return teams.map((t) => ({ id: t.id, name: t.name, members: t._count.memberships }));
+}
+
+/** Every round, newest first. */
+export async function getRounds(): Promise<RoundSummary[]> {
+  const rounds = await prisma.arucoRound.findMany({
+    orderBy: { startedAt: 'desc' },
+    include: { arucoGame: { select: { name: true } }, _count: { select: { teams: true } } },
+  });
+  return rounds.map((r) => ({
+    id: r.id,
+    game: r.game,
+    gameName: r.arucoGame.name,
+    startedAt: r.startedAt.toISOString(),
+    endedAt: r.endedAt?.toISOString() ?? null,
+    teamCount: r._count.teams,
+  }));
+}
 
 /**
- * A fingerprint of the register as last saved. The editor sends back the one
- * it loaded with, so a save made over another admin's newer save is refused
- * rather than silently undoing it. Every save rewrites every row, so the
- * newest `updated_at` changes on each one.
+ * One round, team by team: everything each did, in order, worded from the
+ * activity log. Counts are rebuilt from the log too, so a past round reads
+ * the same after its progress rows were deleted by the next start.
  */
-export function registerVersion(rows: { updatedAt: Date }[]): string {
-  const newest = rows.reduce((max, row) => Math.max(max, row.updatedAt.getTime()), 0);
-  return `${rows.length}:${newest}`;
-}
+export async function getRoundDetail(roundId: string): Promise<RoundDetail | null> {
+  const round = await prisma.arucoRound.findUnique({
+    where: { id: roundId },
+    include: {
+      arucoGame: { select: { name: true } },
+      teams: true,
+      events: { orderBy: { createdAt: 'asc' } },
+      _count: { select: { teams: true } },
+    },
+  });
+  if (!round) return null;
 
-export async function getRegister(db: Prisma.TransactionClient = prisma) {
-  const rows = await db.arucoMarker.findMany({ orderBy: { markerId: 'asc' } });
-  // The table's CHECK constraints keep rows well formed; parseMarker only narrows the types.
-  const markers = rows.map(parseMarker).filter((m): m is Marker => m !== null);
-  return { markers, version: registerVersion(rows) };
-}
+  const hints = await prisma.arucoMarker.findMany({ where: { game: round.game, kind: 'hint' } });
+  const hintNumber = new Map(hints.map((h) => [h.markerId, h.hintNumber]));
 
-/** Every team that has tried a marker or a collector, by team name. */
-export async function getTeamProgress(): Promise<TeamProgress[]> {
-  const [scans, collectors] = await Promise.all([
-    prisma.arucoScan.findMany({ orderBy: { createdAt: 'asc' } }),
-    prisma.arucoCollectorProgress.findMany({ orderBy: { collector: 'asc' } }),
+  const teamIds = [...new Set([...round.teams.map((t) => t.teamId), ...round.events.map((e) => e.teamId)])];
+  const userIds = [...new Set(round.events.flatMap((e) => (e.userId ? [e.userId] : [])))];
+  const [teams, users] = await Promise.all([
+    prisma.team.findMany({ where: { id: { in: teamIds } }, select: { id: true, name: true } }),
+    prisma.user.findMany({ where: { id: { in: userIds } }, select: { id: true, name: true, lastName: true } }),
   ]);
+  const teamName = new Map(teams.map((t) => [t.id, t.name]));
+  const userName = new Map(users.map((u) => [u.id, `${u.name} ${u.lastName}`.trim()]));
 
-  const teamIds = [...new Set([...scans, ...collectors].map((row) => row.teamId))];
-  const teams = await prisma.team.findMany({ where: { id: { in: teamIds } }, select: { id: true, name: true } });
-  const names = new Map(teams.map((team) => [team.id, team.name]));
+  const detailTeams: RoundTeam[] = teamIds.map((teamId) => {
+    const events = round.events.filter((e) => e.teamId === teamId);
+    const timeline: TimelineEntry[] = events.map((e) => {
+      const entry = describe(e, hintNumber);
+      return {
+        id: e.id,
+        at: e.createdAt.toISOString(),
+        who: e.userId ? (userName.get(e.userId) ?? 'Unknown member') : null,
+        action: e.action as TimelineEntry['action'],
+        ...entry,
+      };
+    });
 
-  return teamIds
-    .map((teamId) => ({
+    // Since the team's last reset, as the backend counts.
+    const lastReset = events.findLastIndex((e) => e.action === 'reset');
+    const live = events.slice(lastReset + 1);
+    const tried = new Set(live.filter((e) => e.action === 'scan' && e.outcome !== 'limit').map((e) => e.markerId));
+    const words = live.filter((e) => e.action === 'word' && e.outcome !== 'locked');
+
+    return {
       teamId,
-      teamName: names.get(teamId) ?? null,
-      scans: scans
-        .filter((s) => s.teamId === teamId)
-        .map((s) => ({ markerId: s.markerId, at: s.createdAt.toISOString() })),
-      collectors: collectors
-        .filter((c) => c.teamId === teamId)
-        .map((c) => ({
-          collector: c.collector,
-          attempts: c.attempts,
-          solved: c.solved,
-          solvedAt: c.solvedAt?.toISOString() ?? null,
-        })),
-    }))
-    .sort((a, b) => (a.teamName ?? '').localeCompare(b.teamName ?? ''));
+      teamName: teamName.get(teamId) ?? null,
+      triesUsed: tried.size,
+      wordAttempts: words.length,
+      solved: words.some((e) => e.outcome === 'correct'),
+      timeline,
+    };
+  });
+
+  return {
+    id: round.id,
+    game: round.game,
+    gameName: round.arucoGame.name,
+    startedAt: round.startedAt.toISOString(),
+    endedAt: round.endedAt?.toISOString() ?? null,
+    teamCount: round._count.teams,
+    teams: detailTeams.sort((a, b) => (a.teamName ?? '').localeCompare(b.teamName ?? '')),
+  };
+}
+
+/** Words one logged event. */
+function describe(
+  e: { action: string; outcome: string; content: string; markerId: number | null },
+  hintNumber: Map<number, number | null>,
+): Pick<TimelineEntry, 'tone' | 'text'> {
+  const id = `#${e.markerId}`;
+  if (e.action === 'reset') return { tone: 'neutral', text: 'Progress reset by an organizer' };
+  if (e.action === 'word') {
+    if (e.outcome === 'correct') return { tone: 'good', text: `Word “${e.content}”: right` };
+    if (e.outcome === 'wrong') return { tone: 'bad', text: `Word “${e.content}”: wrong` };
+    return { tone: 'neutral', text: `Word “${e.content}”: not counted (already solved or out of attempts)` };
+  }
+  switch (e.outcome) {
+    case 'letter':
+      return { tone: 'good', text: `Scanned ${id}: letter ${e.content}` };
+    case 'hint': {
+      // A quotation hint carries its own quotes.
+      const n = e.markerId === null ? undefined : hintNumber.get(e.markerId);
+      return { tone: 'good', text: `Scanned ${id}: ${n ? `hint ${n}` : 'hint'}, ${e.content}` };
+    }
+    case 'collector':
+      return { tone: 'good', text: `Scanned ${id}: collector (word box)` };
+    case 'limit':
+      return { tone: 'bad', text: `Tried ${id}: refused, all tries used` };
+    default:
+      return { tone: 'bad', text: `Scanned ${id}: no marker` };
+  }
 }

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
-import { getRegister, getTeamProgress } from './aruco-data';
-import { ProgressTable } from './progress-table';
-import { RegisterEditor } from './register-editor';
+import { getCompetitionTeams, getGames, getRoundDetail, getRounds } from './aruco-data';
+import { GamesPanel } from './games-panel';
+import { RoundPicker, RoundView } from './round-view';
 
 export const metadata: Metadata = { title: 'ArUco' };
 
@@ -15,36 +15,45 @@ async function attempt<T>(what: string, read: () => Promise<T>): Promise<T | nul
   }
 }
 
-export default async function ArucoPage() {
-  // Loaded apart: the register's table comes with a backend migration, and
-  // progress must stay readable (and resettable) if that hasn't run yet.
-  const [register, teams] = await Promise.all([
-    attempt('the ArUco register', () => getRegister()),
-    attempt('ArUco progress', () => getTeamProgress()),
+export default async function ArucoPage({ searchParams }: { searchParams: Promise<{ round?: string }> }) {
+  const params = await searchParams;
+  const [games, teams, rounds] = await Promise.all([
+    attempt('the ArUco games', getGames),
+    attempt('the Competition teams', getCompetitionTeams),
+    attempt('the ArUco rounds', getRounds),
   ]);
+
+  const live = rounds?.find((r) => r.endedAt === null) ?? null;
+  // The round asked for, else the live one, else the latest.
+  const selectedId = rounds?.find((r) => r.id === params.round)?.id ?? live?.id ?? rounds?.[0]?.id ?? null;
+  const detail = selectedId ? await attempt('the ArUco round', () => getRoundDetail(selectedId)) : null;
 
   return (
     <div className="space-y-4">
       <div>
         <h2 className="admin-heading text-lg text-white">ArUco</h2>
         <p className="text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>
-          What each marker ID gives on the main site&apos;s /aruco page, and how far each Competition team has got
+          {live
+            ? `Live: Game ${live.game} · ${live.gameName}, for ${live.teamCount} team${live.teamCount === 1 ? '' : 's'}`
+            : 'No game running: /aruco is closed'}
         </p>
       </div>
 
-      {register ? (
-        <RegisterEditor initial={register.markers} initialVersion={register.version} />
+      {games && teams ? (
+        <GamesPanel games={games} teams={teams} live={live} />
       ) : (
         <LoadError>
-          The marker register could not be loaded. If the backend hasn&apos;t been deployed since the register moved to
-          the database, its migration (20261018010000_aruco_markers) hasn&apos;t run yet.
+          The games could not be loaded. If the backend hasn&apos;t been deployed since the games were added, its
+          migration (20261018020000_aruco_rounds) hasn&apos;t run yet.
         </LoadError>
       )}
 
-      {teams ? (
-        <ProgressTable teams={teams} markers={register?.markers ?? []} />
-      ) : (
-        <LoadError>Team progress could not be loaded. Refresh the page to try again.</LoadError>
+      {rounds && rounds.length > 0 && (
+        <div className="space-y-3 pt-2">
+          <h3 className="admin-heading text-sm text-white">Rounds</h3>
+          <RoundPicker rounds={rounds} selected={selectedId} />
+          {detail ? <RoundView round={detail} /> : <LoadError>This round could not be loaded.</LoadError>}
+        </div>
       )}
     </div>
   );
