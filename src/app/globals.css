@@ -668,85 +668,87 @@ button {
 }
 
 /* ─── ArUco register ──────────────────────────────────── */
-/* One grid row per marker: ID, game, kind, name, what it gives, remove. On
-   phones each row becomes a small card: ID / game / kind across, then name
-   and what it gives full width. */
+/* Each row is two blocks: the ID (the only thing an admin changes) and the
+   fixed action it gives. Side by side at every width; the action wraps. */
 
 .aruco-row {
   display: grid;
-  grid-template-columns: 76px 112px 132px minmax(0, 1fr) minmax(0, 1.5fr) 36px;
-  gap: 8px;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 14px;
   align-items: start;
-  padding: 10px 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 12px 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 }
 
-.aruco-row--head {
-  padding-top: 12px;
-  padding-bottom: 12px;
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.4);
-  border-bottom-color: rgba(0, 232, 122, 0.12);
+.aruco-row[data-moved] {
+  background: rgba(0, 232, 122, 0.04);
 }
 
 .aruco-row[data-problem] {
-  background: rgba(255, 29, 120, 0.04);
+  background: rgba(255, 29, 120, 0.05);
 }
 
-.aruco-field {
+.aruco-id {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aruco-id-input {
   width: 100%;
-  min-width: 0;
-  padding: 7px 10px;
-  font-size: 13px;
-}
-
-.aruco-field--id {
+  padding: 8px 10px;
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  text-align: center;
   font-variant-numeric: tabular-nums;
 }
 
-.aruco-gives {
-  display: flex;
-  gap: 8px;
+.aruco-row[data-moved] .aruco-id-input {
+  color: var(--color-green);
+  border-color: rgba(0, 232, 122, 0.35);
+}
+
+.aruco-id-was {
+  font-size: 11px;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.aruco-action {
   min-width: 0;
+  padding-top: 2px;
 }
 
-.aruco-gives .aruco-field--qty {
-  flex: 0 0 64px;
-}
-
-.aruco-remove {
-  display: inline-flex;
+.aruco-action-head {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 8px;
+  gap: 8px;
+}
+
+.aruco-action-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: #ffffff;
+}
+
+.aruco-action-kind {
+  font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
-  transition: color 150ms ease, background-color 150ms ease;
 }
 
-.aruco-remove:focus-visible {
-  outline: 2px solid var(--color-green);
-  outline-offset: 1px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .aruco-remove:hover {
-    color: var(--color-pink);
-    background: rgba(255, 29, 120, 0.08);
-  }
+.aruco-action-gives {
+  margin-top: 4px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  overflow-wrap: anywhere;
 }
 
 .aruco-problem {
-  grid-column: 1 / -1;
+  margin-top: 6px;
   font-size: 12px;
   color: var(--color-pink);
-}
-
-.aruco-label {
-  display: none;
 }
 
 .aruco-chip {
@@ -769,36 +771,6 @@ button {
 .aruco-chip-id {
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.5);
-}
-
-@media (max-width: 767px) {
-  .aruco-row {
-    grid-template-columns: 64px minmax(0, 1fr) minmax(0, 1fr) 34px;
-  }
-
-  .aruco-row--head {
-    display: none;
-  }
-
-  .aruco-cell--name,
-  .aruco-cell--gives {
-    grid-column: 1 / -1;
-  }
-
-  /* The remove button holds the first line's end; name and gives wrap under. */
-  .aruco-cell--remove {
-    grid-column: 4;
-    grid-row: 1;
-  }
-
-  .aruco-label {
-    display: block;
-    margin-bottom: 4px;
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.4);
-  }
 }
 
 /* ─── Dashboard charts ────────────────────────────────── */

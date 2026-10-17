@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache';
 import { prisma } from '@/lib/prisma';
 import { getAdminId } from '@/lib/require-admin';
 import { getRegister } from './aruco-data';
-import { parseMarker, registerProblems, type Marker } from './aruco-types';
+import { idProblems, type Marker, type Move } from './aruco-types';
 
 export type SaveRegisterResult =
   | { ok: true; markers: Marker[]; version: string }
@@ -12,51 +12,65 @@ export type SaveRegisterResult =
   | { ok: false; stale: boolean; message: string };
 
 /**
- * Replaces the whole register in one transaction. Whole, not row by row, so
- * swapping two markers' IDs is one save: there is never a moment where both
- * rows want the same primary key. The main site reads the table on every
- * scan, so the change is live as soon as this returns.
+ * Re-ranks the register: moves markers to other IDs, nothing else. What each
+ * marker does is read back from the table here, never taken from the client,
+ * so a save can't change a clue. The whole register is rewritten in one
+ * transaction, so swapping two IDs is one save: no moment where both rows
+ * want the same primary key. The main site reads the table on every scan.
  */
-export async function saveRegister(raw: unknown, version: string): Promise<SaveRegisterResult> {
+export async function reassignIds(raw: unknown, version: string): Promise<SaveRegisterResult> {
   // Server actions are reachable by POST from anywhere; the dashboard layout's
   // admin check does not cover them.
-  if (!(await getAdminId())) return { ok: false, stale: false, message: 'Only admins can edit the ArUco register.' };
+  if (!(await getAdminId())) return { ok: false, stale: false, message: 'Only admins can re-rank the ArUco register.' };
 
-  if (!Array.isArray(raw)) return { ok: false, stale: false, message: 'Nothing to save.' };
-  const markers = raw.map(parseMarker);
-  if (markers.some((m) => m === null)) return { ok: false, stale: false, message: 'A row is not a valid marker.' };
-
-  const parsed = markers as Marker[];
-  const problems = registerProblems(parsed);
-  if (problems.size > 0) {
-    const [index, problem] = [...problems][0];
-    return { ok: false, stale: false, message: `Row ${index + 1}: ${problem}` };
-  }
+  if (!Array.isArray(raw) || !raw.every(isMove)) return { ok: false, stale: false, message: 'Nothing to save.' };
+  const moves = new Map((raw as Move[]).map((m) => [m.from, m.to]));
+  if (moves.size !== raw.length) return { ok: false, stale: false, message: 'A marker was moved twice.' };
 
   try {
-    const saved = await prisma.$transaction(async (tx) => {
+    type Outcome = { stale: true } | { problem: string } | { saved: Awaited<ReturnType<typeof getRegister>> };
+    const outcome = await prisma.$transaction(async (tx): Promise<Outcome> => {
       const current = await getRegister(tx);
-      if (current.version !== version) return null;
+      // A marker that no longer has the ID it was moved from: the register changed.
+      if (
+        current.version !== version ||
+        [...moves.keys()].some((from) => !current.markers.some((m) => m.markerId === from))
+      ) {
+        return { stale: true };
+      }
+      const next = current.markers.map((m) => ({ ...m, markerId: moves.get(m.markerId) ?? m.markerId }));
+      const problems = idProblems(next.map((m) => m.markerId));
+      if (problems.size > 0) {
+        const [index, problem] = [...problems][0];
+        return { problem: `${next[index].name}: ${problem}` };
+      }
 
       await tx.arucoMarker.deleteMany({});
-      await tx.arucoMarker.createMany({ data: parsed });
-      return getRegister(tx);
+      await tx.arucoMarker.createMany({ data: next });
+      return { saved: await getRegister(tx) };
     });
 
-    if (!saved) {
+    if ('stale' in outcome) {
       return {
         ok: false,
         stale: true,
         message: 'Someone else saved the register since you opened it. Reload to see their changes, then redo yours.',
       };
     }
+    if ('problem' in outcome) return { ok: false, stale: false, message: outcome.problem };
 
     revalidatePath('/teams/aruco');
-    return { ok: true, ...saved };
+    return { ok: true, ...outcome.saved };
   } catch (error) {
     console.error('Could not save the ArUco register', error);
     return { ok: false, stale: false, message: 'The register could not be saved. Try again.' };
   }
+}
+
+function isMove(value: unknown): value is Move {
+  if (!value || typeof value !== 'object') return false;
+  const { from, to } = value as Record<string, unknown>;
+  return Number.isInteger(from) && Number.isInteger(to);
 }
 
 export type ResetProgressResult = { ok: true } | { ok: false; message: string };

@@ -1,19 +1,13 @@
 /**
- * The ArUco register as the editor and the save action both see it. Shared so
- * the editor can flag a problem before saving and the action can refuse the
- * same problem from a forged POST.
+ * The ArUco register as the re-ranking editor and its save action both see
+ * it. Shared so the editor can flag a bad ID before saving and the action can
+ * refuse the same thing from a forged POST.
  */
 
 export const MARKER_KINDS = ['beacon', 'indicator', 'collector'] as const;
 export const MARKER_GAMES = ['Garden', 'Mine'] as const;
-/** Collectors with an ARUCO_COLLECTOR_<n>_ANSWER on the backend. */
-export const COLLECTORS = [1, 2] as const;
 /** DICT_4X4_50 has IDs 0 to 49. */
 export const MAX_MARKER_ID = 49;
-/** How many beacons may carry one ID: a sanity cap, not a rule of the game. */
-const MAX_QUANTITY = 20;
-const MAX_NAME = 80;
-const MAX_CLUE = 300;
 
 export type MarkerKind = (typeof MARKER_KINDS)[number];
 export type MarkerGame = (typeof MARKER_GAMES)[number];
@@ -35,79 +29,57 @@ export type Marker = {
   collector: number | null;
 };
 
+/** A marker moving from the ID it has now to another one. */
+export type Move = { from: number; to: number };
+
+export function isValidId(id: number): boolean {
+  return Number.isInteger(id) && id >= 0 && id <= MAX_MARKER_ID;
+}
+
 /**
- * Changes a marker's kind, giving it the fields that kind needs and dropping
- * the ones it can't have, so a row is never left half one kind.
+ * What is wrong with each new ID, by row index: out of range, or taken by
+ * another row. Every row is checked, moved or not, since a move can land on
+ * an ID a row that stayed put still holds.
  */
-export function withKind(marker: Marker, kind: MarkerKind): Marker {
-  return {
-    ...marker,
-    kind,
-    clue: kind === 'collector' ? '' : marker.clue,
-    quantity: kind === 'beacon' ? (marker.quantity ?? 1) : null,
-    collector: kind === 'collector' ? (marker.collector ?? 1) : null,
-  };
-}
-
-/** What is wrong with one marker on its own, or null. */
-export function markerProblem(marker: Marker): string | null {
-  if (!Number.isInteger(marker.markerId) || marker.markerId < 0 || marker.markerId > MAX_MARKER_ID) {
-    return `ID must be a whole number from 0 to ${MAX_MARKER_ID}.`;
-  }
-  if (!marker.name.trim()) return 'Give it a name.';
-  if (marker.name.length > MAX_NAME) return `Name is over ${MAX_NAME} characters.`;
-  if (marker.clue.length > MAX_CLUE) return `Clue is over ${MAX_CLUE} characters.`;
-  if (marker.kind === 'beacon') {
-    const q = marker.quantity;
-    if (q === null || !Number.isInteger(q) || q < 1 || q > MAX_QUANTITY) {
-      return `Quantity must be from 1 to ${MAX_QUANTITY}.`;
-    }
-  }
-  if (marker.kind === 'collector' && !COLLECTORS.includes(marker.collector as 1 | 2)) {
-    return 'Pick collector 1 or 2.';
-  }
-  return null;
-}
-
-/** Each problem in the register, by row index: a row's own, then a shared ID. */
-export function registerProblems(markers: Marker[]): Map<number, string> {
+export function idProblems(ids: number[]): Map<number, string> {
   const problems = new Map<number, string>();
   const rowsById = new Map<number, number[]>();
-  markers.forEach((marker, i) => {
-    const own = markerProblem(marker);
-    if (own) problems.set(i, own);
-    rowsById.set(marker.markerId, [...(rowsById.get(marker.markerId) ?? []), i]);
+  ids.forEach((id, i) => {
+    if (!isValidId(id)) problems.set(i, `ID must be a whole number from 0 to ${MAX_MARKER_ID}.`);
+    else rowsById.set(id, [...(rowsById.get(id) ?? []), i]);
   });
   for (const [id, rows] of rowsById) {
     if (rows.length < 2) continue;
-    for (const i of rows) if (!problems.has(i)) problems.set(i, `ID ${id} is used by ${rows.length} rows.`);
+    for (const i of rows) problems.set(i, `ID ${id} is given to ${rows.length} markers.`);
   }
   return problems;
 }
 
 /**
- * Reads one marker from untrusted input (a server action's argument), or null
- * when it isn't shaped like one. Trims text and drops fields the kind can't
- * have; range checks are markerProblem's.
+ * Reads one aruco_markers row as a Marker, or null when it isn't shaped like
+ * one. The table's CHECK constraints keep rows well formed; this narrows types.
  */
-export function parseMarker(raw: unknown): Marker | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  const kind = MARKER_KINDS.find((k) => k === r.kind);
-  const game = MARKER_GAMES.find((g) => g === r.game);
+export function parseMarker(raw: {
+  markerId: number;
+  kind: string;
+  game: string;
+  name: string;
+  clue: string;
+  quantity: number | null;
+  collector: number | null;
+}): Marker | null {
+  const kind = MARKER_KINDS.find((k) => k === raw.kind);
+  const game = MARKER_GAMES.find((g) => g === raw.game);
   if (!kind || !game) return null;
-  if (typeof r.markerId !== 'number' || typeof r.name !== 'string') return null;
-  const clue = typeof r.clue === 'string' ? r.clue : '';
-  const marker: Marker = {
-    markerId: r.markerId,
+  return {
+    markerId: raw.markerId,
     kind,
     game,
-    name: r.name.trim(),
-    clue: clue.trim(),
-    quantity: typeof r.quantity === 'number' ? r.quantity : null,
-    collector: typeof r.collector === 'number' ? r.collector : null,
+    name: raw.name,
+    clue: raw.clue,
+    quantity: raw.quantity,
+    collector: raw.collector,
   };
-  return withKind(marker, kind);
 }
 
 /** A Competition team's ArUco progress, for the progress table. */
