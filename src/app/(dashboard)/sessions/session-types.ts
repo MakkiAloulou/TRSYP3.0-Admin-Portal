@@ -41,6 +41,10 @@ export type SessionRow = SessionCounts & {
   /** FABLAB, COMPETITION or CHALLENGE when the roster is a website activity's
    *  selected teams. */
   teamActivity: string | null;
+  /** Minutes out a participant may spend in total before their branch is
+   *  charged, and the points each penalty costs. */
+  breakAllowanceMinutes: number;
+  penaltyPoints: number;
   /** Whether an Assigned session has a roster yet. Until it does, nobody can
    *  be told apart as a walk-in. Always true for an Everyone session. */
   hasRoster: boolean;
@@ -93,9 +97,11 @@ export type SessionPenalty = {
   participantId: string;
   name: string | null;
   lastName: string | null;
+  email: string | null;
+  /** The branch when charged, kept even if theirs changes later. */
   sb: string | null;
   reason: PenaltyReason;
-  /** Minutes out (OverBreak, LeftEarly) or late (Late); 0 for Absent. */
+  /** Minutes out in total (OverBreak, LeftEarly) or late (Late); 0 for Absent. */
   minutes: number;
   points: number;
   createdAt: string;
@@ -110,6 +116,29 @@ export const PENALTY_LABELS: Record<PenaltyReason, string> = {
   Late: 'Late',
 };
 
+/** What the participant did, in the check-in app's own words. */
+export function describePenalty(reason: PenaltyReason, minutes: number) {
+  switch (reason) {
+    case 'Absent':
+      return 'Absent';
+    case 'Late':
+      return `Arrived ${minutes} min late`;
+    case 'LeftEarly':
+      return `Left early, ${minutes} min out in total`;
+    default:
+      return `${minutes} min of breaks in total`;
+  }
+}
+
+/** One time someone went in and, if they did, came back out. */
+export type SessionInterval = {
+  participantId: string;
+  checkIn: string;
+  checkOut: string | null;
+  checkedInBy: string | null;
+  checkedOutBy: string | null;
+};
+
 export type SessionDetail = {
   session: SessionRow;
   people: SessionPerson[];
@@ -117,6 +146,8 @@ export type SessionDetail = {
   /** Scans recorded before officers had accounts, so nobody is named. */
   unattributedScans: number;
   penalties: SessionPenalty[];
+  /** Every scan in the session, oldest first: the record behind the penalties. */
+  intervals: SessionInterval[];
 };
 
 /** The lists on a session's page, in the order its tabs show them. */
