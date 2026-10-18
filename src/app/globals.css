@@ -3296,6 +3296,201 @@ tr[data-reviewed='REJECTED'] {
   }
 }
 
+/* ─── Branch standings ────────────────────────────────── */
+
+.std-list {
+  margin-top: 8px;
+}
+
+.std-row {
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.std-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* A branch whose points just changed: a brief glow, then back to normal. */
+.std-row[data-changed] {
+  animation: stdChanged 2.4s var(--ease-out);
+}
+
+@keyframes stdChanged {
+  0% {
+    background: rgba(255, 29, 120, 0.16);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* Place, branch, a bar against the worst, the score. */
+.std-row-main {
+  display: grid;
+  grid-template-columns: 56px minmax(120px, 220px) minmax(0, 1fr) 120px;
+  align-items: center;
+  gap: 16px;
+}
+
+.std-place {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.std-move {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.std-move--up {
+  color: var(--color-green);
+}
+
+.std-move--down {
+  color: var(--color-pink);
+}
+
+.std-branch {
+  min-width: 0;
+}
+
+.std-track {
+  height: 8px;
+}
+
+.std-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.std-points {
+  font-weight: 600;
+  color: var(--color-pink);
+}
+
+.std-score .std-points {
+  font-size: 16px;
+}
+
+.std-per {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.std-row-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 8px 0 0 72px;
+}
+
+.std-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.std-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0 72px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12.5px;
+}
+
+.std-sessions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.std-sessions a {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .std-sessions a:hover {
+    color: #fff;
+    text-decoration: underline;
+  }
+}
+
+/* The Live switch: a dot that breathes while the table refreshes itself. */
+.std-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.std-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.std-live--on {
+  color: var(--color-green);
+  border-color: rgba(0, 232, 122, 0.35);
+}
+
+.std-live--on .std-live-dot {
+  background: var(--color-green);
+  animation: stdBreathe 2s ease-in-out infinite;
+}
+
+@keyframes stdBreathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 640px) {
+  .std-row-main {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+  }
+
+  .std-track {
+    display: none;
+  }
+
+  .std-row-foot,
+  .std-sessions {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .std-live--on .std-live-dot {
+    animation: none;
+  }
+}
+
 /* ─── Workshops ─────────────────────────────────────── */
 
 .ws-card {
