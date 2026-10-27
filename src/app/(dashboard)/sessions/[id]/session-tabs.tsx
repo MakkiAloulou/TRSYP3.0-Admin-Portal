@@ -2,15 +2,18 @@
 
 import { useMemo, useState } from 'react';
 import { downloadXlsx } from '@/lib/xlsx';
-import { buildSessionXlsx, sessionXlsxFilename } from '../export-session';
+import { buildPenaltiesXlsx, buildSessionXlsx, sessionXlsxFilename } from '../export-session';
 import {
   PENALTY_LABELS,
   SESSION_TABS,
+  describePenalty,
   formatDayTime,
   formatTime,
   fullName,
   walkInReason,
+  type PenaltyReason,
   type SessionDetail,
+  type SessionInterval,
   type SessionOfficer,
   type SessionPenalty,
   type SessionPerson,
@@ -45,6 +48,7 @@ export function SessionTabs({ detail, initialTab }: { detail: SessionDetail; ini
   const { session, people, officers, penalties } = detail;
   const [tab, setTab] = useState<SessionTab>(initialTab);
   const [filters, setFilters] = useState<Filters>({ query: '', sb: 'ALL' });
+  const [reason, setReason] = useState<PenaltyReason | 'ALL'>('ALL');
 
   const lists = useMemo(
     () =>
@@ -67,10 +71,12 @@ export function SessionTabs({ detail, initialTab }: { detail: SessionDetail; ini
     penalties: penalties.length,
   };
 
-  // Only branches that appear, as on the participants page.
+  // Only branches that appear, as on the participants page. A penalty keeps
+  // the branch it was charged to, so those count too.
   const branches = useMemo(
-    () => [...new Set(people.map((p) => p.sb).filter((sb): sb is string => Boolean(sb)))].sort(),
-    [people],
+    () =>
+      [...new Set([...people, ...penalties].map((p) => p.sb).filter((sb): sb is string => Boolean(sb)))].sort(),
+    [people, penalties],
   );
 
   function open(next: SessionTab) {
@@ -84,6 +90,7 @@ export function SessionTabs({ detail, initialTab }: { detail: SessionDetail; ini
 
   const visiblePeople = isPeopleTab(tab) ? lists[tab].filter((p) => matches(p, filters)) : [];
   const visiblePenalties = penalties.filter((p) => matches(p, filters));
+  const exportedPenalties = reason === 'ALL' ? visiblePenalties : visiblePenalties.filter((p) => p.reason === reason);
   const filtered = filters.query.trim() !== '' || filters.sb !== 'ALL';
 
   return (
@@ -111,14 +118,18 @@ export function SessionTabs({ detail, initialTab }: { detail: SessionDetail; ini
           filters={filters}
           setFilters={setFilters}
           branches={branches}
-          shown={isPeopleTab(tab) ? visiblePeople.length : visiblePenalties.length}
+          shown={isPeopleTab(tab) ? visiblePeople.length : exportedPenalties.length}
           total={isPeopleTab(tab) ? lists[tab].length : penalties.length}
           filtered={filtered}
           people={isPeopleTab(tab) ? visiblePeople : null}
           onExport={
             isPeopleTab(tab)
               ? async () => downloadXlsx(await buildSessionXlsx(visiblePeople, tab, session), sessionXlsxFilename(session, tab))
-              : null
+              : async () =>
+                  downloadXlsx(
+                    await buildPenaltiesXlsx(exportedPenalties, detail.intervals),
+                    sessionXlsxFilename(session, 'penalties'),
+                  )
           }
         />
       )}
@@ -128,7 +139,16 @@ export function SessionTabs({ detail, initialTab }: { detail: SessionDetail; ini
       {tab === 'excused' && <ExcusedTable people={visiblePeople} session={session} />}
       {tab === 'walk-ins' && <WalkInsTable people={visiblePeople} session={session} />}
       {tab === 'officers' && <OfficersTable officers={officers} unattributed={detail.unattributedScans} />}
-      {tab === 'penalties' && <PenaltiesTable penalties={visiblePenalties} />}
+      {tab === 'penalties' && (
+        <PenaltyLog
+          session={session}
+          penalties={visiblePenalties}
+          intervals={detail.intervals}
+          reason={reason}
+          setReason={setReason}
+          total={penalties}
+        />
+      )}
     </div>
   );
 }
@@ -503,53 +523,238 @@ function OfficersTable({ officers, unattributed }: { officers: SessionOfficer[];
   );
 }
 
-function PenaltiesTable({ penalties }: { penalties: SessionPenalty[] }) {
-  const columns = [
-    { label: 'Participant' },
-    { label: 'Branch' },
-    { label: 'Reason' },
-    { label: 'Minutes', align: 'center' as const },
-    { label: 'Points', align: 'center' as const },
-    { label: 'Charged' },
-  ];
-  const total = penalties.reduce((sum, p) => sum + p.points, 0);
+const REASON_ORDER: PenaltyReason[] = ['Absent', 'Late', 'OverBreak', 'LeftEarly'];
+
+const REASON_WORDS: Record<PenaltyReason, [string, string]> = {
+  OverBreak: ['over the break allowance', 'over the break allowance'],
+  LeftEarly: ['left early', 'left early'],
+  Absent: ['absence', 'absences'],
+  Late: ['late arrival', 'late arrivals'],
+};
+
+/** "32 over the break allowance, 17 left early, 27 absences", as the check-in app says it. */
+function penaltySummary(penalties: SessionPenalty[]) {
+  return REASON_ORDER.map((reason) => [reason, penalties.filter((p) => p.reason === reason).length] as const)
+    .filter(([, n]) => n > 0)
+    .map(([reason, n]) => `${n} ${REASON_WORDS[reason][n === 1 ? 0 : 1]}`)
+    .join(', ');
+}
+
+function minutesBetween(from: string, to: string) {
+  return Math.max(0, Math.round((new Date(to).getTime() - new Date(from).getTime()) / 60000));
+}
+
+/** One person's deductions here, with the scans behind them. */
+type PenaltyEntry = {
+  participantId: string;
+  penalties: SessionPenalty[];
+  points: number;
+  intervals: SessionInterval[];
+};
+
+/**
+ * The session's penalty log, as the check-in app's standings show it: what
+ * it cost each branch, then every penalised participant with what they did —
+ * and, here, the in-and-out scans that led to it.
+ */
+function PenaltyLog({
+  session,
+  penalties,
+  intervals,
+  reason,
+  setReason,
+  total,
+}: {
+  session: SessionRow;
+  /** Already narrowed by the toolbar's search and branch. */
+  penalties: SessionPenalty[];
+  intervals: SessionInterval[];
+  reason: PenaltyReason | 'ALL';
+  setReason: (reason: PenaltyReason | 'ALL') => void;
+  /** Every penalty in the session, before any filter. */
+  total: SessionPenalty[];
+}) {
+  const shown = reason === 'ALL' ? penalties : penalties.filter((p) => p.reason === reason);
+  const points = shown.reduce((sum, p) => sum + p.points, 0);
+
+  const entries = useMemo(() => {
+    const byPerson = new Map<string, PenaltyEntry>();
+    for (const p of shown) {
+      const entry = byPerson.get(p.participantId) ?? {
+        participantId: p.participantId,
+        penalties: [],
+        points: 0,
+        intervals: intervals.filter((i) => i.participantId === p.participantId),
+      };
+      entry.penalties.push(p);
+      entry.points += p.points;
+      byPerson.set(p.participantId, entry);
+    }
+    // Most points first; the same, by name.
+    return [...byPerson.values()].sort(
+      (a, b) => b.points - a.points || fullName(a.penalties[0]).localeCompare(fullName(b.penalties[0])),
+    );
+  }, [shown, intervals]);
+
+  const branches = useMemo(() => {
+    const bySb = new Map<string, number>();
+    for (const p of shown) bySb.set(p.sb ?? 'No student branch', (bySb.get(p.sb ?? 'No student branch') ?? 0) + p.points);
+    return [...bySb.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [shown]);
+  const most = Math.max(1, ...branches.map(([, n]) => n));
+
+  if (total.length === 0) {
+    return (
+      <div className="admin-card p-6">
+        <p className="viz-empty">
+          {session.mandatory ? 'No penalties charged here.' : 'This session counts attendance only: it never charges penalties.'}
+        </p>
+      </div>
+    );
+  }
+
   return (
-    <TableCard>
-      <Head columns={columns} />
-      <tbody>
-        {penalties.length === 0 && <Empty columns={columns.length}>No penalties charged here.</Empty>}
-        {penalties.map((p) => (
-          <tr key={p.id} style={ROW_STYLE}>
-            <Td className="sess-cell-wide">
-              <span className="block truncate font-medium text-white">{fullName(p)}</span>
-            </Td>
-            <Td label="Branch">{p.sb ?? <Dash />}</Td>
-            <Td label="Reason">{PENALTY_LABELS[p.reason] ?? p.reason}</Td>
-            <Td label="Minutes" className="text-center tabular-nums">
-              {p.reason === 'Absent' ? <Dash /> : p.minutes}
-            </Td>
-            <Td label="Points" className="text-center tabular-nums" style={{ color: 'var(--color-pink)' }}>
-              −{p.points}
-            </Td>
-            <Td label="Charged" className="tabular-nums">
-              {formatDayTime(p.createdAt)}
-            </Td>
-          </tr>
+    <div className="space-y-4">
+      <nav className="pay-filters" aria-label="Kind of penalty">
+        {(['ALL', ...REASON_ORDER] as const).map((r) => {
+          const n = r === 'ALL' ? penalties.length : penalties.filter((p) => p.reason === r).length;
+          if (r !== 'ALL' && n === 0) return null;
+          return (
+            <button
+              key={r}
+              type="button"
+              className="pay-filter"
+              onClick={() => setReason(r)}
+              data-active={reason === r ? '' : undefined}
+              aria-pressed={reason === r}
+            >
+              {r === 'ALL' ? 'All' : PENALTY_LABELS[r]}
+              <span className="pay-filter-count">{n}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <section className="admin-card ws-card">
+        <div className="font-medium text-white">
+          {points} point{points === 1 ? '' : 's'} lost across {branches.length} branch{branches.length === 1 ? '' : 'es'}
+        </div>
+        <div className="mt-1 text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
+          {penaltySummary(shown) || 'Nothing matches.'} · {session.penaltyPoints} points each · breaks may total{' '}
+          {session.breakAllowanceMinutes} min
+        </div>
+        {branches.length > 0 && (
+          <ol className="pen-ranks">
+            {branches.map(([sb, n], i) => (
+              <li key={sb} className="pen-rank">
+                <span className="pen-rank-pos">{i + 1}</span>
+                <span className="pen-rank-sb">{sb}</span>
+                <span className="sess-meter-track pen-rank-track" aria-hidden>
+                  <span className="sess-meter-fill" style={{ width: `${(n / most) * 100}%`, background: 'var(--color-pink)' }} />
+                </span>
+                <span className="pen-rank-points">−{n}</span>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <section className="admin-card ws-card">
+        <div className="font-medium text-white">
+          Every deduction, by participant ({entries.length})
+        </div>
+        <ul className="pen-log">
+          {entries.length === 0 && <li className="viz-empty">Nobody matches.</li>}
+          {entries.map((entry) => (
+            <PenaltyLogEntry key={entry.participantId} entry={entry} session={session} />
+          ))}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function PenaltyLogEntry({ entry, session }: { entry: PenaltyEntry; session: SessionRow }) {
+  const [open, setOpen] = useState(false);
+  const first = entry.penalties[0];
+  const outMinutes = entry.intervals.reduce(
+    (sum, interval, i) => {
+      // Time out is from each exit to the next entry; an exit with no return
+      // counts up to the end of the session.
+      if (!interval.checkOut) return sum;
+      const next = entry.intervals[i + 1];
+      return sum + minutesBetween(interval.checkOut, next ? next.checkIn : session.endsAt);
+    },
+    0,
+  );
+
+  return (
+    <li className="pen-entry">
+      <div className="pen-entry-head">
+        <span className="block min-w-0">
+          <span className="block truncate font-medium text-white">{fullName(first)}</span>
+          <span className="block truncate text-xs" style={{ color: 'rgba(255,255,255,0.5)' }}>
+            {[first.email, first.sb ?? 'No student branch'].filter(Boolean).join(' · ')}
+          </span>
+        </span>
+        <span className="pen-entry-points">−{entry.points}</span>
+      </div>
+
+      <ul className="pen-entry-reasons">
+        {entry.penalties.map((p) => (
+          <li key={p.id}>
+            <span className={`admin-badge ${p.reason === 'Absent' ? 'admin-badge--red' : 'admin-badge--amber'}`}>
+              {PENALTY_LABELS[p.reason]}
+            </span>
+            <span>{describePenalty(p.reason, p.minutes)}</span>
+            <Muted>charged {formatDayTime(p.createdAt)}</Muted>
+          </li>
         ))}
-      </tbody>
-      {penalties.length > 0 && (
-        <tfoot>
-          <tr>
-            <td colSpan={4} className="px-4 py-3 text-xs uppercase tracking-wide" style={{ color: 'rgba(255,255,255,0.4)' }}>
-              Total shown
-            </td>
-            <td className="px-4 py-3 text-center font-semibold tabular-nums" style={{ color: 'var(--color-pink)' }}>
-              −{total}
-            </td>
-            <td />
-          </tr>
-        </tfoot>
+      </ul>
+
+      {entry.intervals.length === 0 ? (
+        <p className="pen-entry-note">Never scanned in.</p>
+      ) : (
+        <>
+          <button type="button" className="pay-link text-xs" onClick={() => setOpen(!open)} aria-expanded={open}>
+            {open
+              ? 'Hide scans'
+              : `Show scans (${entry.intervals.length} in · ${entry.intervals.filter((i) => i.checkOut).length} out${
+                  outMinutes > 0 ? ` · ${outMinutes} min out` : ''
+                })`}
+          </button>
+          {open && (
+            <ol className="pen-scans">
+              {entry.intervals.map((interval, i) => {
+                const next = entry.intervals[i + 1];
+                return (
+                  <li key={interval.checkIn}>
+                    <span className="tabular-nums">
+                      In <strong>{formatTime(interval.checkIn)}</strong>
+                      {interval.checkedInBy && <Muted> by {interval.checkedInBy}</Muted>}
+                    </span>
+                    {interval.checkOut && !interval.checkedOutBy && interval.checkOut === session.endsAt ? (
+                      // Closing a session checks out whoever is still in, at its end time.
+                      <Muted>still inside when the session closed</Muted>
+                    ) : interval.checkOut ? (
+                      <span className="tabular-nums">
+                        Out <strong>{formatTime(interval.checkOut)}</strong>
+                        {interval.checkedOutBy && <Muted> by {interval.checkedOutBy}</Muted>}
+                        <Muted>
+                          {' '}
+                          · {next ? `back after ${minutesBetween(interval.checkOut, next.checkIn)} min` : 'did not come back'}
+                        </Muted>
+                      </span>
+                    ) : (
+                      <Muted>still inside</Muted>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </>
       )}
-    </TableCard>
+    </li>
   );
 }

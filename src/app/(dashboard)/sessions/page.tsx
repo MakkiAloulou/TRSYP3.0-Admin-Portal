@@ -3,6 +3,7 @@ import { StatTile } from '../charts';
 import { getSessions } from './session-data';
 import { attendanceRate, formatRate } from './session-types';
 import { CheckinMissing, SessionsTable } from './sessions-table';
+import { SessionsSubtabs } from './sessions-subtabs';
 
 export const metadata: Metadata = { title: 'Sessions' };
 
@@ -31,6 +32,8 @@ export default async function SessionsPage() {
           Attendance as the check-in app recorded it. Times are Tunis time.
         </p>
       </div>
+
+      <SessionsSubtabs />
 
       {!result.ok ? (
         <div className="admin-card p-6">

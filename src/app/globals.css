@@ -3175,6 +3175,581 @@ tr[data-reviewed='REJECTED'] {
   }
 }
 
+/* ─── Session penalty log ─────────────────────────────── */
+
+/* Points lost per branch: position, branch, a bar against the worst, points. */
+.pen-ranks {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.pen-rank {
+  display: grid;
+  grid-template-columns: 22px minmax(90px, 160px) minmax(0, 1fr) 48px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.pen-rank-pos {
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.pen-rank-sb {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.pen-rank-track {
+  height: 6px;
+}
+
+.pen-rank-points,
+.pen-entry-points {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--color-pink);
+}
+
+.pen-log {
+  margin-top: 6px;
+}
+
+.pen-entry {
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pen-entry:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.pen-entry-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
+}
+
+.pen-entry-points {
+  font-size: 15px;
+}
+
+.pen-entry-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 8px;
+  font-size: 13px;
+}
+
+.pen-entry-reasons li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+
+.pen-entry-note {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+/* The scans behind a penalty: a short timeline, one line per time in. */
+.pen-scans {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12.5px;
+}
+
+.pen-scans li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+}
+
+.pen-scans strong {
+  font-weight: 600;
+  color: #fff;
+}
+
+@media (max-width: 640px) {
+  .pen-rank {
+    grid-template-columns: 18px minmax(0, 1fr) 44px;
+  }
+
+  .pen-rank-track {
+    display: none;
+  }
+}
+
+/* ─── Branch standings ────────────────────────────────── */
+
+.std-list {
+  margin-top: 8px;
+}
+
+.std-row {
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.std-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* A branch whose points just changed: a brief glow, then back to normal. */
+.std-row[data-changed] {
+  animation: stdChanged 2.4s var(--ease-out);
+}
+
+@keyframes stdChanged {
+  0% {
+    background: rgba(255, 29, 120, 0.16);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* Place, branch, a bar against the worst, the score. */
+.std-row-main {
+  display: grid;
+  grid-template-columns: 56px minmax(120px, 220px) minmax(0, 1fr) 120px;
+  align-items: center;
+  gap: 16px;
+}
+
+.std-place {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.std-move {
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.std-move--up {
+  color: var(--color-green);
+}
+
+.std-move--down {
+  color: var(--color-pink);
+}
+
+.std-branch {
+  min-width: 0;
+}
+
+.std-track {
+  height: 8px;
+}
+
+.std-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.std-points {
+  font-weight: 600;
+  color: var(--color-pink);
+}
+
+.std-score .std-points {
+  font-size: 16px;
+}
+
+.std-per {
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.std-row-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin: 8px 0 0 72px;
+}
+
+.std-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.std-sessions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0 72px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+  font-size: 12.5px;
+}
+
+.std-sessions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.std-sessions a {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .std-sessions a:hover {
+    color: #fff;
+    text-decoration: underline;
+  }
+}
+
+/* The Live switch: a dot that breathes while the table refreshes itself. */
+.std-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.std-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.std-live--on {
+  color: var(--color-green);
+  border-color: rgba(0, 232, 122, 0.35);
+}
+
+.std-live--on .std-live-dot {
+  background: var(--color-green);
+  animation: stdBreathe 2s ease-in-out infinite;
+}
+
+@keyframes stdBreathe {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (max-width: 640px) {
+  .std-row-main {
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+  }
+
+  .std-track {
+    display: none;
+  }
+
+  .std-row-foot,
+  .std-sessions {
+    margin-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .std-live--on .std-live-dot {
+    animation: none;
+  }
+}
+
+/* ─── Workshops ─────────────────────────────────────── */
+
+.ws-card {
+  padding: 18px 20px;
+}
+
+/* The title and its details on the left, the seat meter on the right; on a
+   phone the meter drops under the title. */
+.ws-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.ws-meter {
+  flex: none;
+  width: 200px;
+}
+
+.ws-card-actions {
+  display: flex;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.ws-card-actions .pay-link:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ws-attendees {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.ws-confirm {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ws-error {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  white-space: normal;
+  color: #ef4444;
+}
+
+/* The workshop someone already has in a session: quiet, it needs nothing. */
+.ws-seat {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.ws-assign {
+  display: block;
+}
+
+.ws-assign-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-assign-select {
+  width: 230px;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.ws-over {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.ws-over input {
+  accent-color: var(--color-pink);
+}
+
+/* "Add participant": a filter and a scope over the top of a scrolling list. */
+.ws-add-top {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.ws-add-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 12.5px;
+}
+
+.ws-add-foot:empty {
+  display: none;
+}
+
+.ws-added {
+  color: var(--color-green);
+}
+
+/* A dropdown's list, kept inside the card: it scrolls rather than pushing
+   the next workshop off the screen. */
+.ws-results {
+  max-height: 360px;
+  margin-top: 10px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.ws-result:last-child {
+  border-bottom: 0;
+}
+
+.ws-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.ws-result-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Where someone already sits this session, before "Move here". */
+.ws-result-note {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.ws-result-error {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+/* The lookup: the person on the left, a column per session on the right. */
+.ws-lookup {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.ws-lookup-seats {
+  display: flex;
+  gap: 16px;
+}
+
+.ws-lookup-seat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 290px;
+  min-width: 0;
+}
+
+.ws-lookup-label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.ws-seat--held {
+  max-width: 100%;
+  color: var(--color-green);
+}
+
+/* Quiet until it is wanted: a seat is removed far less often than read. */
+.ws-remove {
+  align-self: flex-start;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.ws-lookup .ws-assign-select {
+  flex: 1;
+  width: auto;
+}
+
+@media (max-width: 1023px) {
+  .ws-lookup {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ws-lookup-seats {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ws-lookup-seat {
+    width: auto;
+  }
+}
+
+@media (max-width: 767px) {
+  .ws-add-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ws-add-top .part-toolbar-btn {
+    width: auto;
+  }
+
+  .ws-result {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ws-result-action {
+    justify-content: space-between;
+  }
+
+  .ws-result-note {
+    max-width: none;
+    flex: 1;
+  }
+
+  .ws-card-head {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .ws-meter {
+    width: 100%;
+  }
+
+  .ws-assign-select {
+    flex: 1;
+    width: auto;
+  }
+
+  .ws-seat {
+    max-width: 100%;
+  }
+}
+
 /* ─── Participant details popup ───────────────────────
    One rhythm throughout: a header, the payment strip, then quiet sections
    divided by hairlines — no coloured headings competing with the content. */

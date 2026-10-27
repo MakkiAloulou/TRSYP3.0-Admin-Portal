@@ -1,8 +1,11 @@
 import { buildXlsx, tabulate, type XlsxColumn } from '@/lib/xlsx';
 import {
   SESSION_TABS,
+  describePenalty,
   localDateTime,
   walkInReason,
+  type SessionInterval,
+  type SessionPenalty,
   type SessionPerson,
   type SessionRow,
   type SessionTab,
@@ -54,11 +57,42 @@ export function buildSessionXlsx(people: SessionPerson[], tab: SessionTab, sessi
   return buildXlsx(rows, { sheet: sheet.slice(0, 31), header });
 }
 
+/**
+ * The penalty log, one row per deduction, with the scans behind it as text:
+ * "13:02–13:40 (Officer 1 / Officer 2), 13:55–". Times are Tunis time; points
+ * are numbers so the column can be summed.
+ */
+export function buildPenaltiesXlsx(penalties: SessionPenalty[], intervals: SessionInterval[]) {
+  const time = (iso: string | null) => (iso ? localDateTime(iso).slice(11) : '');
+  const scans = (participantId: string) =>
+    intervals
+      .filter((i) => i.participantId === participantId)
+      .map((i) => {
+        const who = [i.checkedInBy, i.checkedOutBy].filter(Boolean).join(' / ');
+        return `${time(i.checkIn)}–${time(i.checkOut)}${who ? ` (${who})` : ''}`;
+      })
+      .join(', ');
+
+  const columns: XlsxColumn<SessionPenalty>[] = [
+    { header: 'First name', value: (p) => p.name ?? '' },
+    { header: 'Last name', value: (p) => p.lastName ?? '' },
+    { header: 'Email', value: (p) => p.email ?? '' },
+    { header: 'Student branch', value: (p) => p.sb ?? '' },
+    { header: 'What happened', value: (p) => describePenalty(p.reason, p.minutes) },
+    { header: 'Minutes', value: (p) => p.minutes },
+    { header: 'Points', value: (p) => p.points },
+    { header: 'Charged at', value: (p) => localDateTime(p.createdAt) },
+    { header: 'Scans (in–out)', value: (p) => scans(p.participantId) },
+  ];
+  const { header, rows } = tabulate(columns, penalties);
+  return buildXlsx(rows, { sheet: 'Penalties', header });
+}
+
 /** Names the session and the list, so two exports from one day are told apart. */
 export function sessionXlsxFilename(session: SessionRow, tab: SessionTab, now = new Date()) {
   const slug = session.title
     .normalize('NFKD')
-    .replace(/[̀-ͯ]/g, '')
+    .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')

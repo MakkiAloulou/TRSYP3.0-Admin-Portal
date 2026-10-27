@@ -7,6 +7,7 @@ import type {
   SessionAudience,
   SessionCounts,
   SessionDetail,
+  SessionInterval,
   SessionOfficer,
   SessionPenalty,
   SessionPerson,
@@ -24,9 +25,10 @@ import type {
  * lib/attendance/expected.ts so the two apps can never disagree on a count:
  *
  *  - Everyone session: every participant who has paid and is not banned.
- *  - Assigned session: whoever is listed in session_participants, plus every
- *    member of the website's selected teams for its team_activity — of them,
- *    those who have paid and are not banned.
+ *  - Assigned session: whoever is listed by name in session_participants (as
+ *    workshop bookings are) and is not banned, paid or not — the booking is
+ *    the decision; plus every member of the website's selected teams for its
+ *    team_activity who has paid and is not banned.
  *  - Excused: on the roster of a technical-challenge session that overlaps
  *    this one. A challenge never excuses anyone from itself.
  *  - Must attend: expected and not excused.
@@ -54,24 +56,23 @@ const ROSTER = Prisma.sql`
   attendees AS (
     SELECT id FROM public.participants WHERE paid AND NOT banned
   ),
-  listed AS (
-    SELECT session_id, participant_id FROM checkin.session_participants
-    UNION
-    SELECT s.id, m.participant_id
-      FROM checkin.sessions s
-      JOIN public.teams t ON t.activity::text = s.team_activity AND t.selected
-      JOIN public.team_memberships m ON m.team_id = t.id
-  ),
   expected AS (
     SELECT s.id AS session_id, a.id AS participant_id
       FROM checkin.sessions s
      CROSS JOIN attendees a
      WHERE s.audience = 'Everyone'
     UNION
-    SELECT l.session_id, l.participant_id
-      FROM listed l
-      JOIN checkin.sessions s ON s.id = l.session_id AND s.audience = 'Assigned'
-      JOIN attendees a ON a.id = l.participant_id
+    SELECT sp.session_id, sp.participant_id
+      FROM checkin.session_participants sp
+      JOIN checkin.sessions s ON s.id = sp.session_id AND s.audience = 'Assigned'
+      JOIN public.participants p ON p.id = sp.participant_id AND NOT p.banned
+    UNION
+    SELECT s.id, m.participant_id
+      FROM checkin.sessions s
+      JOIN public.teams t ON t.activity::text = s.team_activity AND t.selected
+      JOIN public.team_memberships m ON m.team_id = t.id
+      JOIN attendees a ON a.id = m.participant_id
+     WHERE s.audience = 'Assigned'
   ),
   excused AS (
     SELECT DISTINCT s.id AS session_id, e.participant_id
@@ -132,6 +133,8 @@ type SessionSqlRow = {
   mandatory: boolean;
   challenge: boolean;
   team_activity: string | null;
+  break_allowance_minutes: number;
+  penalty_points: number;
   has_roster: boolean;
   officers: string[];
   expected: number;
@@ -163,6 +166,7 @@ function sessionsQuery(id?: string) {
            s.status::text AS status,
            s.audience::text AS audience,
            s.mandatory, s.challenge, s.team_activity,
+           s.break_allowance_minutes, s.penalty_points,
            s.audience = 'Everyone'
              OR s.team_activity IS NOT NULL
              OR EXISTS (SELECT 1 FROM checkin.session_participants sp WHERE sp.session_id = s.id)
@@ -210,6 +214,8 @@ function toSession(row: SessionSqlRow): SessionRow {
     mandatory: row.mandatory,
     challenge: row.challenge,
     teamActivity: row.team_activity,
+    breakAllowanceMinutes: row.break_allowance_minutes,
+    penaltyPoints: row.penalty_points,
     hasRoster: row.has_roster,
     officers: row.officers,
     ...counts,
@@ -245,7 +251,7 @@ export const getSessionDetail = cache(
     const tables = await getCheckinTables();
     if (!tables.sessions) return { found: false, reason: 'no-checkin' };
 
-    const [sessions, people, officers, unattributed, penalties] = await Promise.all([
+    const [sessions, people, officers, unattributed, penalties, intervals] = await Promise.all([
       sessionsQuery(id),
       peopleQuery(id),
       officersQuery(id, tables.assignments),
@@ -255,6 +261,7 @@ export const getSessionDetail = cache(
           FROM checkin.presences
          WHERE session_id = ${id}`,
       penaltiesQuery(id),
+      intervalsQuery(id),
     ]);
 
     if (sessions.length === 0) return { found: false, reason: 'not-found' };
@@ -266,6 +273,7 @@ export const getSessionDetail = cache(
       officers,
       unattributedScans: unattributed[0]?.n ?? 0,
       penalties,
+      intervals,
     };
   },
 );
@@ -427,6 +435,7 @@ type PenaltySqlRow = {
   participant_id: string;
   name: string | null;
   last_name: string | null;
+  email: string | null;
   sb: string | null;
   reason: PenaltyReason;
   minutes: number;
@@ -438,7 +447,7 @@ type PenaltySqlRow = {
 async function penaltiesQuery(id: string): Promise<SessionPenalty[]> {
   const rows = await prisma.$queryRaw<PenaltySqlRow[]>`
     SELECT pe.id, pe.participant_id,
-           u.name, u."lastName" AS last_name,
+           u.name, u."lastName" AS last_name, u.email,
            pe.sb::text AS sb, pe.reason::text AS reason,
            pe.break_minutes AS minutes, pe.points,
            ${iso('pe.created_at')} AS created_at
@@ -453,10 +462,42 @@ async function penaltiesQuery(id: string): Promise<SessionPenalty[]> {
     participantId: r.participant_id,
     name: r.name,
     lastName: r.last_name,
+    email: r.email,
     sb: r.sb,
     reason: r.reason,
     minutes: r.minutes,
     points: r.points,
     createdAt: r.created_at,
+  }));
+}
+
+type IntervalSqlRow = {
+  participant_id: string;
+  check_in: string;
+  check_out: string | null;
+  checked_in_by: string | null;
+  checked_out_by: string | null;
+};
+
+/** Every in-and-out of the session, with the officers who scanned each. */
+async function intervalsQuery(id: string): Promise<SessionInterval[]> {
+  const rows = await prisma.$queryRaw<IntervalSqlRow[]>`
+    SELECT pr.participant_id,
+           ${iso('pr.check_in_at')} AS check_in,
+           ${iso('pr.check_out_at')} AS check_out,
+           sin.display_name AS checked_in_by,
+           sout.display_name AS checked_out_by
+      FROM checkin.presences pr
+      LEFT JOIN checkin.scanners sin ON sin.id = pr.check_in_scanner_id
+      LEFT JOIN checkin.scanners sout ON sout.id = pr.check_out_scanner_id
+     WHERE pr.session_id = ${id}
+     ORDER BY pr.check_in_at, pr.id`;
+
+  return rows.map((r) => ({
+    participantId: r.participant_id,
+    checkIn: r.check_in,
+    checkOut: r.check_out,
+    checkedInBy: r.checked_in_by,
+    checkedOutBy: r.checked_out_by,
   }));
 }
